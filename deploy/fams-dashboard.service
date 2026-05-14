@@ -1,0 +1,21 @@
+[Unit]
+Description=FAMS Dashboard (read-only webhook dashboard)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/projects/fams-dashboard
+EnvironmentFile=/etc/fams-dashboard/fams-dashboard.env
+ExecStart=/usr/bin/node /root/projects/fams-dashboard/dist/index.js
+Restart=on-failure
+RestartSec=3
+User=root
+Group=root
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/fams-dashboard
+
+[Install]
+WantedBy=multi-user.target

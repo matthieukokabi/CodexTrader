@@ -1,0 +1,26 @@
+{
+  "name": "fams-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "start": "node dist/index.js",
+    "test": "node --test dist/tests/*.test.js",
+    "test:src": "node --import tsx --test src/tests/*.test.ts",
+    "validate": "npm run typecheck && npm run build && npm run test"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.13.8",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}
