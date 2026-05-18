@@ -7,8 +7,8 @@ function baseRow(): LatestStateRow {
   return {
     schema_version: "fams.v1",
     indicator_version: "FAMS v0.3.7 Lite",
-    exchange: "CME_DL",
-    symbol: "CME_MINI_DL:NQ1!",
+    exchange: "CME_MINI_DL",
+    symbol: "NQ1!",
     timeframe: "15",
     bar_time_utc: "2026-05-14T10:00:00Z",
     trigger_time_utc: "2026-05-14T10:00:01Z",
@@ -34,15 +34,18 @@ function baseRow(): LatestStateRow {
   };
 }
 
-test("returns FINAL_SCENARIO_ACTIVE for active final scenario", () => {
+test("returns FINAL_SCENARIO_ACTIVE and LONG READY for active final long scenario", () => {
   const row = baseRow();
   row.fams_scenario_code = 1;
+  row.fams_raw_scenario_code = 1;
   const out = deriveState(row, new Date("2026-05-14T10:05:05Z"));
   assert.equal(out.operatingState, "FINAL_SCENARIO_ACTIVE");
   assert.equal(out.readiness, "READY");
+  assert.equal(out.direction, "LONG");
+  assert.equal(out.tradeBadge, "LONG READY");
 });
 
-test("returns RAW_SETUP_FORMING when raw active and blocked only by bar confirmation", () => {
+test("returns RAW_SETUP_FORMING and WATCH when raw active and blocked only by bar confirmation", () => {
   const row = baseRow();
   row.fams_raw_scenario_code = 2;
   row.fams_scenario_code = 4;
@@ -51,6 +54,7 @@ test("returns RAW_SETUP_FORMING when raw active and blocked only by bar confirma
   const out = deriveState(row, new Date("2026-05-14T10:10:05Z"));
   assert.equal(out.operatingState, "RAW_SETUP_FORMING");
   assert.equal(out.direction, "LONG");
+  assert.equal(out.tradeBadge, "WATCH");
 });
 
 test("returns STRUCTURAL_READY_WATCH when structural blocker exists", () => {
@@ -59,13 +63,16 @@ test("returns STRUCTURAL_READY_WATCH when structural blocker exists", () => {
   row.fams_secondary_gate_reason_code = 4;
   const out = deriveState(row, new Date("2026-05-14T10:10:05Z"));
   assert.equal(out.operatingState, "STRUCTURAL_READY_WATCH");
+  assert.equal(out.tradeBadge, "WATCH");
 });
 
 test("returns STALE_DATA when age exceeds threshold from bar_time_utc", () => {
   const row = baseRow();
+  row.fams_raw_scenario_code = 1;
   const out = deriveState(row, new Date("2026-05-14T10:46:01Z"));
   assert.equal(out.operatingState, "STALE_DATA");
   assert.equal(out.stale, true);
+  assert.equal(out.tradeBadge, "STALE");
 });
 
 test("flags unknown hygiene when market type is unknown", () => {
@@ -74,4 +81,30 @@ test("flags unknown hygiene when market type is unknown", () => {
   const out = deriveState(row, new Date("2026-05-14T10:10:05Z"));
   assert.equal(out.direction, "UNKNOWN");
   assert.equal(out.unknownHygiene, true);
+  assert.equal(out.tradeBadge, "UNKNOWN");
+});
+
+test("computes confidence score and bucket with rule stack", () => {
+  const row = baseRow();
+  row.fams_scenario_code = 1;
+  row.fams_raw_scenario_code = 1;
+  row.fams_rvol = 1.6;
+  row.fams_htf_conflict = 0;
+  row.fams_weak_participation = 0;
+  row.fams_clean_interaction = 1;
+  row.fams_trend_state = 1;
+  row.fams_htf_trend_state = 1;
+
+  const out = deriveState(row, new Date("2026-05-14T10:05:05Z"));
+  assert.equal(out.confidenceScore, 90);
+  assert.equal(out.confidenceBucket, "HIGH");
+});
+
+test("normalizes symbol and collapsed group id", () => {
+  const row = baseRow();
+  row.exchange = "CME_MINI_DL";
+  row.symbol = "es1!";
+  const out = deriveState(row, new Date("2026-05-14T10:05:05Z"));
+  assert.equal(out.symbolNorm, "CME_MINI_DL:ES1!");
+  assert.equal(out.collapsedGroupId, "CME_MINI_DL_ES1");
 });

@@ -45,6 +45,10 @@ export type Direction = "LONG" | "SHORT" | "UNKNOWN";
 
 export type Readiness = "READY" | "FORMING" | "WATCH" | "NO_TRADE" | "STALE";
 
+export type ConfidenceBucket = "LOW" | "MEDIUM" | "HIGH";
+
+export type TradeBadge = "LONG READY" | "SHORT READY" | "WATCH" | "NO_TRADE" | "STALE" | "UNKNOWN";
+
 export interface StateViewRow {
   symbol: string;
   timeframe: string;
@@ -83,4 +87,9 @@ export interface StateViewRow {
   stale: boolean;
   state_priority: number;
   unknown_hygiene: boolean;
+  confidence_score: number;
+  confidence_bucket: ConfidenceBucket;
+  trade_badge: TradeBadge;
+  symbol_norm: string;
+  collapsed_group_id: string;
 }

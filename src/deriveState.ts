@@ -1,4 +1,11 @@
-import type { Direction, LatestStateRow, OperatingState, Readiness } from "./types.js";
+import type {
+  ConfidenceBucket,
+  Direction,
+  LatestStateRow,
+  OperatingState,
+  Readiness,
+  TradeBadge
+} from "./types.js";
 
 const STATE_PRIORITY: Record<OperatingState, number> = {
   FINAL_SCENARIO_ACTIVE: 1,
@@ -7,6 +14,18 @@ const STATE_PRIORITY: Record<OperatingState, number> = {
   NO_TRADE_STILL: 4,
   STALE_DATA: 5
 };
+
+const CONFIDENCE_BASE: Record<OperatingState, number> = {
+  FINAL_SCENARIO_ACTIVE: 60,
+  RAW_SETUP_FORMING: 45,
+  STRUCTURAL_READY_WATCH: 35,
+  NO_TRADE_STILL: 20,
+  STALE_DATA: 10
+};
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
 
 function parseTimeframeToMinutes(timeframe: string): number | null {
   const tf = timeframe.trim().toUpperCase();
@@ -25,6 +44,26 @@ function staleThresholdMs(timeframe: string): number {
   if (minutes === 240) return 540 * 60 * 1000;
   if (minutes === 1440) return 2160 * 60 * 1000;
   return 24 * 60 * 60 * 1000;
+}
+
+function normalizeText(value: string): string {
+  return value.trim().toUpperCase().replace(/\s+/g, "");
+}
+
+function normalizeSymbol(exchange: string, symbol: string): string {
+  const symbolNorm = normalizeText(symbol);
+  if (symbolNorm.includes(":")) {
+    return symbolNorm;
+  }
+  const exchangeNorm = normalizeText(exchange);
+  if (!exchangeNorm) {
+    return symbolNorm;
+  }
+  return `${exchangeNorm}:${symbolNorm}`;
+}
+
+function buildCollapsedGroupId(symbolNorm: string): string {
+  return symbolNorm.replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "UNKNOWN_GROUP";
 }
 
 function deriveDirection(row: LatestStateRow): Direction {
@@ -75,6 +114,62 @@ function deriveReadiness(operatingState: OperatingState): Readiness {
   return "NO_TRADE";
 }
 
+function deriveConfidenceScore(row: LatestStateRow, operatingState: OperatingState): number {
+  let score = CONFIDENCE_BASE[operatingState];
+
+  if (row.fams_trend_state === row.fams_htf_trend_state) {
+    score += 10;
+  }
+
+  if (row.fams_rvol >= 1.5) {
+    score += 15;
+  } else if (row.fams_rvol >= 1.0) {
+    score += 10;
+  }
+
+  if (row.fams_htf_conflict) {
+    score -= 15;
+  }
+
+  if (row.fams_weak_participation) {
+    score -= 10;
+  }
+
+  if (row.fams_clean_interaction) {
+    score += 5;
+  }
+
+  return clamp(Math.round(score), 0, 100);
+}
+
+function deriveConfidenceBucket(score: number): ConfidenceBucket {
+  if (score >= 70) return "HIGH";
+  if (score >= 45) return "MEDIUM";
+  return "LOW";
+}
+
+function deriveTradeBadge(
+  unknownHygiene: boolean,
+  stale: boolean,
+  operatingState: OperatingState,
+  direction: Direction
+): TradeBadge {
+  if (unknownHygiene) return "UNKNOWN";
+  if (stale) return "STALE";
+
+  if (operatingState === "FINAL_SCENARIO_ACTIVE") {
+    if (direction === "LONG") return "LONG READY";
+    if (direction === "SHORT") return "SHORT READY";
+    return "WATCH";
+  }
+
+  if (operatingState === "RAW_SETUP_FORMING" || operatingState === "STRUCTURAL_READY_WATCH") {
+    return "WATCH";
+  }
+
+  return "NO_TRADE";
+}
+
 export interface DerivedState {
   stale: boolean;
   ageMs: number;
@@ -84,6 +179,11 @@ export interface DerivedState {
   direction: Direction;
   readiness: Readiness;
   unknownHygiene: boolean;
+  confidenceScore: number;
+  confidenceBucket: ConfidenceBucket;
+  tradeBadge: TradeBadge;
+  symbolNorm: string;
+  collapsedGroupId: string;
 }
 
 export function deriveState(row: LatestStateRow, now = new Date()): DerivedState {
@@ -93,6 +193,11 @@ export function deriveState(row: LatestStateRow, now = new Date()): DerivedState
   const operatingState = deriveOperatingStateFromRow(row, stale);
   const direction = deriveDirection(row);
   const timeframeMinutes = parseTimeframeToMinutes(row.timeframe);
+  const unknownHygiene = row.fams_market_type === 4 || direction === "UNKNOWN";
+  const confidenceScore = deriveConfidenceScore(row, operatingState);
+  const confidenceBucket = deriveConfidenceBucket(confidenceScore);
+  const symbolNorm = normalizeSymbol(row.exchange, row.symbol);
+
   return {
     stale,
     ageMs,
@@ -101,7 +206,12 @@ export function deriveState(row: LatestStateRow, now = new Date()): DerivedState
     statePriority: STATE_PRIORITY[operatingState],
     direction,
     readiness: deriveReadiness(operatingState),
-    unknownHygiene: row.fams_market_type === 4 || direction === "UNKNOWN"
+    unknownHygiene,
+    confidenceScore,
+    confidenceBucket,
+    tradeBadge: deriveTradeBadge(unknownHygiene, stale, operatingState, direction),
+    symbolNorm,
+    collapsedGroupId: buildCollapsedGroupId(symbolNorm)
   };
 }
 

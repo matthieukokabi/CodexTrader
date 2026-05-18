@@ -30,6 +30,51 @@ const webhookLimiter = rateLimit({
   legacyHeaders: false
 });
 
+const CSV_COLUMNS: Array<keyof StateViewRow> = [
+  "symbol",
+  "timeframe",
+  "timeframe_minutes",
+  "symbol_norm",
+  "collapsed_group_id",
+  "market_type_code",
+  "market_type",
+  "final_scenario_code",
+  "final_scenario",
+  "raw_scenario_code",
+  "raw_scenario",
+  "direction",
+  "readiness",
+  "trade_badge",
+  "confidence_score",
+  "confidence_bucket",
+  "operating_state",
+  "state_priority",
+  "gate_reason_code",
+  "gate_reason",
+  "secondary_gate_reason_code",
+  "secondary_gate_reason",
+  "trend_state_code",
+  "trend_state",
+  "htf_trend_state_code",
+  "htf_trend_state",
+  "rvol",
+  "extension_score",
+  "weak_participation",
+  "htf_conflict",
+  "clean_interaction",
+  "breakout_accepted",
+  "breakout_failure",
+  "bar_confirmed",
+  "no_trade_gate",
+  "last_price",
+  "bar_time_utc",
+  "received_at_utc",
+  "age_ms",
+  "age",
+  "stale",
+  "unknown_hygiene"
+];
+
 function toStateViewRow(row: LatestStateRow, now: Date): StateViewRow {
   const derived = deriveState(row, now);
   return {
@@ -69,13 +114,35 @@ function toStateViewRow(row: LatestStateRow, now: Date): StateViewRow {
     age: formatAge(derived.ageMs),
     stale: derived.stale,
     state_priority: derived.statePriority,
-    unknown_hygiene: derived.unknownHygiene
+    unknown_hygiene: derived.unknownHygiene,
+    confidence_score: derived.confidenceScore,
+    confidence_bucket: derived.confidenceBucket,
+    trade_badge: derived.tradeBadge,
+    symbol_norm: derived.symbolNorm,
+    collapsed_group_id: derived.collapsedGroupId
   };
 }
 
 function buildStateRows(now = new Date()): StateViewRow[] {
   const mapped = db.getLatestState().map((row) => toStateViewRow(row, now));
   return sortStateRows(mapped);
+}
+
+function csvEscape(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  const str = String(value);
+  if (/[",\n\r]/.test(str)) {
+    return `"${str.replaceAll("\"", "\"\"")}"`;
+  }
+  return str;
+}
+
+function toCsv(rows: StateViewRow[]): string {
+  const header = CSV_COLUMNS.join(",");
+  const body = rows
+    .map((row) => CSV_COLUMNS.map((column) => csvEscape(row[column])).join(","))
+    .join("\n");
+  return `${header}\n${body}`;
 }
 
 app.get("/healthz", (_req, res) => {
@@ -116,6 +183,12 @@ app.get("/api/state", (_req, res) => {
   const now = new Date();
   const rows = buildStateRows(now);
   return res.status(200).json({ ok: true, count: rows.length, rows, generated_at_utc: now.toISOString() });
+});
+
+app.get("/api/state.csv", (_req, res) => {
+  const rows = buildStateRows(new Date());
+  const csv = toCsv(rows);
+  res.status(200).type("text/csv; charset=utf-8").send(csv);
 });
 
 app.get("/dashboard", (_req, res) => {
