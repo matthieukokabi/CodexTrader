@@ -54,6 +54,7 @@ export function buildBoardHealth(
 
     const item: SymbolChecklistItem = {
       symbol_norm: rollup.symbol_norm,
+      direction_bias: rollup.direction_bias,
       expected_tf_count: expectedTimeframeCount,
       observed_tf_count: rollup.coverage_count,
       missing_tf_count: rollup.missing_timeframes.length,

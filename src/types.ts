@@ -43,6 +43,8 @@ export type OperatingState =
 
 export type Direction = "LONG" | "SHORT" | "UNKNOWN";
 
+export type DirectionBias = "LONG" | "SHORT" | "MIXED";
+
 export type Readiness = "READY" | "FORMING" | "WATCH" | "NO_TRADE" | "STALE";
 
 export type ConfidenceBucket = "LOW" | "MEDIUM" | "HIGH";
@@ -62,6 +64,7 @@ export interface StateViewRow {
   raw_scenario: string;
   operating_state: OperatingState;
   direction: Direction;
+  direction_bias: DirectionBias;
   readiness: Readiness;
   gate_reason_code: number;
   gate_reason: string;
@@ -112,6 +115,8 @@ export interface ConfluenceCandidate {
   timeframe: string;
   timeframe_canonical: string;
   timeframe_minutes: number | null;
+  direction: Direction;
+  direction_bias: DirectionBias;
   trade_badge: TradeBadge;
   operating_state: OperatingState;
   confidence_score: number;
@@ -132,6 +137,7 @@ export interface ConfluenceRollup {
   coverage_count: number;
   missing_timeframes: string[];
   unknown_hygiene: boolean;
+  direction_bias: DirectionBias;
   htf_alignment: HtfAlignment;
   conflict_reasons: string[];
   best_long: ConfluenceCandidate | null;
@@ -149,6 +155,7 @@ export type HealthBlocker =
 
 export interface SymbolChecklistItem {
   symbol_norm: string;
+  direction_bias: DirectionBias;
   expected_tf_count: number;
   observed_tf_count: number;
   missing_tf_count: number;

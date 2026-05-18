@@ -17,6 +17,7 @@ function mkRow(overrides: Partial<StateViewRow>): StateViewRow {
     raw_scenario: "RAW_NONE",
     operating_state: "NO_TRADE_STILL",
     direction: "UNKNOWN",
+    direction_bias: "MIXED",
     readiness: "NO_TRADE",
     gate_reason_code: 0,
     gate_reason: "NONE",
@@ -64,6 +65,7 @@ test("buildConfluenceRollups selects best long and reports missing timeframe cov
       timeframe_canonical: "15",
       timeframe_minutes: 15,
       direction: "LONG",
+      direction_bias: "LONG",
       trade_badge: "WATCH",
       operating_state: "RAW_SETUP_FORMING",
       state_priority: 2,
@@ -78,6 +80,7 @@ test("buildConfluenceRollups selects best long and reports missing timeframe cov
       timeframe_canonical: "60",
       timeframe_minutes: 60,
       direction: "LONG",
+      direction_bias: "LONG",
       trade_badge: "LONG READY",
       operating_state: "FINAL_SCENARIO_ACTIVE",
       state_priority: 1,
@@ -92,6 +95,7 @@ test("buildConfluenceRollups selects best long and reports missing timeframe cov
       timeframe_canonical: "240",
       timeframe_minutes: 240,
       direction: "LONG",
+      direction_bias: "LONG",
       trade_badge: "WATCH",
       operating_state: "STRUCTURAL_READY_WATCH",
       state_priority: 3,
@@ -109,6 +113,7 @@ test("buildConfluenceRollups selects best long and reports missing timeframe cov
   assert.equal(nq.symbol_norm, "CME_MINI_DL:NQ1!");
   assert.equal(nq.coverage_count, 3);
   assert.deepEqual(nq.missing_timeframes, ["1D"]);
+  assert.equal(nq.direction_bias, "LONG");
   assert.equal(nq.best_long?.trade_badge, "LONG READY");
   assert.equal(nq.best_long?.timeframe_canonical, "60");
   assert.equal(nq.best_short, null);
@@ -126,6 +131,7 @@ test("buildConfluenceRollups exposes structural conflict reasons", () => {
       timeframe_canonical: "15",
       timeframe_minutes: 15,
       direction: "SHORT",
+      direction_bias: "MIXED",
       trade_badge: "WATCH",
       operating_state: "STRUCTURAL_READY_WATCH",
       state_priority: 3,
@@ -146,55 +152,25 @@ test("buildConfluenceRollups exposes structural conflict reasons", () => {
   const btc = rollups[0];
   assert.equal(btc.best_short?.trade_badge, "WATCH");
   assert.equal(btc.best_long, null);
+  assert.equal(btc.direction_bias, "MIXED");
   assert.equal(btc.htf_alignment, "CONFLICT_OR_MIXED");
   assert.deepEqual(btc.conflict_reasons, ["HTF_CONFLICT", "WEAK_PARTICIPATION", "NO_CLEAN_INTERACTION"]);
   assert.equal(btc.sort_rank, 3);
 });
 
-test("buildConfluenceRollups sorting puts long-ready before short-ready before unknown", () => {
+test("buildConfluenceRollups sorts no-candidate symbols by bias long then short then mixed", () => {
   const rows: StateViewRow[] = [
-    mkRow({
-      symbol_norm: "CME_MINI_DL:NQ1!",
-      direction: "LONG",
-      trade_badge: "LONG READY",
-      operating_state: "FINAL_SCENARIO_ACTIVE",
-      state_priority: 1,
-      confidence_score: 80,
-      confidence_bucket: "HIGH",
-      trend_state: "BULLISH",
-      htf_trend_state: "BULLISH"
-    }),
-    mkRow({
-      symbol_norm: "BINANCE:ETHUSDT",
-      symbol: "ETHUSDT",
-      direction: "SHORT",
-      trade_badge: "SHORT READY",
-      operating_state: "FINAL_SCENARIO_ACTIVE",
-      state_priority: 1,
-      confidence_score: 70,
-      confidence_bucket: "HIGH",
-      trend_state: "BEARISH",
-      htf_trend_state: "BEARISH"
-    }),
-    mkRow({
-      symbol_norm: "OANDA:EURUSD",
-      symbol: "EURUSD",
-      direction: "UNKNOWN",
-      trade_badge: "UNKNOWN",
-      operating_state: "NO_TRADE_STILL",
-      state_priority: 4,
-      confidence_score: 20,
-      confidence_bucket: "LOW",
-      unknown_hygiene: true
-    })
+    mkRow({ symbol_norm: "A", symbol: "A", direction: "UNKNOWN", direction_bias: "SHORT" }),
+    mkRow({ symbol_norm: "B", symbol: "B", direction: "UNKNOWN", direction_bias: "MIXED" }),
+    mkRow({ symbol_norm: "C", symbol: "C", direction: "UNKNOWN", direction_bias: "LONG" })
   ];
 
   const rollups = buildConfluenceRollups(rows);
   assert.equal(rollups.length, 3);
-  assert.equal(rollups[0].symbol_norm, "CME_MINI_DL:NQ1!");
-  assert.equal(rollups[1].symbol_norm, "BINANCE:ETHUSDT");
-  assert.equal(rollups[2].symbol_norm, "OANDA:EURUSD");
-  assert.equal(rollups[0].sort_rank, 1);
-  assert.equal(rollups[1].sort_rank, 2);
-  assert.equal(rollups[2].sort_rank, 5);
+  assert.equal(rollups[0].symbol_norm, "C");
+  assert.equal(rollups[0].sort_rank, 5);
+  assert.equal(rollups[1].symbol_norm, "A");
+  assert.equal(rollups[1].sort_rank, 6);
+  assert.equal(rollups[2].symbol_norm, "B");
+  assert.equal(rollups[2].sort_rank, 7);
 });

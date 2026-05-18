@@ -3,6 +3,7 @@ import type {
   ConfluenceCandidate,
   ConfluenceRollup,
   Direction,
+  DirectionBias,
   HtfAlignment,
   OperatingState,
   StateViewRow,
@@ -35,6 +36,8 @@ function toCandidate(row: StateViewRow): ConfluenceCandidate {
     timeframe: row.timeframe,
     timeframe_canonical: row.timeframe_canonical,
     timeframe_minutes: row.timeframe_minutes,
+    direction: row.direction,
+    direction_bias: row.direction_bias,
     trade_badge: row.trade_badge,
     operating_state: row.operating_state,
     confidence_score: row.confidence_score,
@@ -102,6 +105,15 @@ function deriveConflictReasons(candidate: ConfluenceCandidate | null, alignment:
   return reasons;
 }
 
+function deriveRollupBias(rows: StateViewRow[]): DirectionBias {
+  const hasLong = rows.some((row) => row.direction_bias === "LONG");
+  const hasShort = rows.some((row) => row.direction_bias === "SHORT");
+
+  if (hasLong && !hasShort) return "LONG";
+  if (hasShort && !hasLong) return "SHORT";
+  return "MIXED";
+}
+
 function sortRank(rollup: Omit<ConfluenceRollup, "sort_rank">): number {
   if (rollup.best_long?.trade_badge === "LONG READY") return 1;
   if (rollup.best_short?.trade_badge === "SHORT READY") return 2;
@@ -112,7 +124,9 @@ function sortRank(rollup: Omit<ConfluenceRollup, "sort_rank">): number {
   const stale = rollup.best_long?.trade_badge === "STALE" || rollup.best_short?.trade_badge === "STALE";
   if (stale) return 4;
 
-  return 5;
+  if (rollup.direction_bias === "LONG") return 5;
+  if (rollup.direction_bias === "SHORT") return 6;
+  return 7;
 }
 
 function candidateConfidence(candidate: ConfluenceCandidate | null): number {
@@ -142,12 +156,14 @@ export function buildConfluenceRollups(rows: StateViewRow[]): ConfluenceRollup[]
     const tfSet = new Set(symbolRows.map((row) => row.timeframe_canonical));
     const missingTimeframes = EXPECTED_TIMEFRAMES.filter((tf) => !tfSet.has(tf));
     const coverageCount = EXPECTED_TIMEFRAMES.length - missingTimeframes.length;
+    const directionBias = deriveRollupBias(symbolRows);
 
     const base: Omit<ConfluenceRollup, "sort_rank"> = {
       symbol_norm: symbolNorm,
       coverage_count: coverageCount,
       missing_timeframes: missingTimeframes,
       unknown_hygiene: symbolRows.some((row) => row.unknown_hygiene),
+      direction_bias: directionBias,
       htf_alignment: alignment,
       conflict_reasons: conflictReasons,
       best_long: bestLong,

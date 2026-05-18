@@ -8,6 +8,7 @@ import {
 import type {
   ConfidenceBucket,
   Direction,
+  DirectionBias,
   LatestStateRow,
   OperatingState,
   Readiness,
@@ -97,6 +98,12 @@ export function deriveDirectionFromRow(row: LatestStateRow): Direction {
     return "SHORT";
   }
   return "UNKNOWN";
+}
+
+export function deriveDirectionBiasFromRow(row: LatestStateRow): DirectionBias {
+  if (row.fams_trend_state === 1 && row.fams_htf_trend_state === 1) return "LONG";
+  if (row.fams_trend_state === -1 && row.fams_htf_trend_state === -1) return "SHORT";
+  return "MIXED";
 }
 
 function deriveOperatingStateFromRow(row: LatestStateRow, stale: boolean): OperatingState {
@@ -200,6 +207,7 @@ export interface DerivedState {
   operatingState: OperatingState;
   statePriority: number;
   direction: Direction;
+  directionBias: DirectionBias;
   readiness: Readiness;
   unknownHygiene: boolean;
   confidenceScore: number;
@@ -221,6 +229,7 @@ export function deriveState(row: LatestStateRow, now = new Date()): DerivedState
   const stale = ageMs > staleThresholdMs(row.timeframe, now);
   const operatingState = deriveOperatingStateFromRow(row, stale);
   const direction = deriveDirectionFromRow(row);
+  const directionBias = deriveDirectionBiasFromRow(row);
   const timeframeCanonical = canonicalizeTimeframe(row.timeframe);
   const timeframeMinutes = parseTimeframeToMinutes(row.timeframe);
 
@@ -243,6 +252,7 @@ export function deriveState(row: LatestStateRow, now = new Date()): DerivedState
     operatingState,
     statePriority: STATE_PRIORITY[operatingState],
     direction,
+    directionBias,
     readiness: deriveReadiness(operatingState),
     unknownHygiene,
     confidenceScore,

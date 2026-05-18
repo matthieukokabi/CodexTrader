@@ -174,3 +174,29 @@ test("marks non-canonical timeframe as not expected", () => {
   assert.equal(out.expectedPair, false);
   assert.equal(out.missingExpected, true);
 });
+
+test("derives direction bias from trend and htf trend without affecting unknown hygiene rules", () => {
+  const row = baseRow();
+
+  row.fams_trend_state = 1;
+  row.fams_htf_trend_state = 1;
+  let out = deriveState(row, new Date("2026-05-14T10:05:05Z"));
+  assert.equal(out.directionBias, "LONG");
+
+  row.fams_trend_state = -1;
+  row.fams_htf_trend_state = -1;
+  out = deriveState(row, new Date("2026-05-14T10:05:05Z"));
+  assert.equal(out.directionBias, "SHORT");
+
+  row.fams_trend_state = 1;
+  row.fams_htf_trend_state = -1;
+  out = deriveState(row, new Date("2026-05-14T10:05:05Z"));
+  assert.equal(out.directionBias, "MIXED");
+
+  // Scenario direction still drives unknown hygiene exactly as before.
+  row.fams_raw_scenario_code = 4;
+  row.fams_scenario_code = 4;
+  out = deriveState(row, new Date("2026-05-14T10:05:05Z"));
+  assert.equal(out.direction, "UNKNOWN");
+  assert.equal(out.unknownHygiene, true);
+});

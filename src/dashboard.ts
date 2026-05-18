@@ -46,6 +46,19 @@ function tradeBadgeClass(badge: string): string {
   return "badge-no-trade";
 }
 
+function directionBiasClass(bias: string): string {
+  if (bias === "LONG") return "badge-long";
+  if (bias === "SHORT") return "badge-short";
+  return "badge-gray";
+}
+
+function scenarioDirectionClass(direction: string): string {
+  if (direction === "LONG") return "badge-long";
+  if (direction === "SHORT") return "badge-short";
+  if (direction === "MIXED") return "badge-yellow";
+  return "badge-unknown";
+}
+
 function candidateStatusClass(status: CandidateStatus): string {
   if (status === "BEST") return "badge-green";
   if (status === "UNKNOWN") return "badge-unknown";
@@ -136,14 +149,19 @@ function renderConfluenceCards(rollups: ConfluenceRollup[]): string {
       const missingCount = rollup.missing_timeframes.length;
       const reasons = rollup.conflict_reasons.join(", ");
 
+      const scenarioDirection = bestLong && bestShort ? "MIXED" : bestLong ? "LONG" : bestShort ? "SHORT" : "UNKNOWN";
+
       return `<div class="confluence-card"
   data-symbol-norm="${esc(rollup.symbol_norm)}"
   data-best-long-badge="${esc(longBadge)}"
   data-best-short-badge="${esc(shortBadge)}"
   data-rank="${esc(rollup.sort_rank)}"
-  data-unknown="${rollup.unknown_hygiene ? "1" : "0"}">
+  data-unknown="${rollup.unknown_hygiene ? "1" : "0"}"
+  data-direction-bias="${esc(rollup.direction_bias)}">
   <div class="symbol-card-head">
     <span class="badge badge-navy">${esc(rollup.symbol_norm)}</span>
+    <span class="badge ${directionBiasClass(rollup.direction_bias)}">BIAS ${esc(rollup.direction_bias)}</span>
+    <span class="badge ${scenarioDirectionClass(scenarioDirection)}">DIR ${esc(scenarioDirection)}</span>
     <span class="badge ${missingCount === 0 ? "badge-green" : "badge-orange"}">coverage ${rollup.coverage_count}/4</span>
     <span class="badge ${missingCount === 0 ? "badge-green" : "badge-yellow"}">missing ${missingCount}</span>
     ${rollup.unknown_hygiene ? '<span class="badge badge-unknown">HYGIENE WARN</span>' : '<span class="badge badge-green">HYGIENE OK</span>'}
@@ -154,28 +172,31 @@ function renderConfluenceCards(rollups: ConfluenceRollup[]): string {
       <tr>
         <th>candidate</th>
         <th>trade</th>
+        <th>dir</th>
+        <th>bias</th>
         <th>tf</th>
         <th>state</th>
         <th>conf</th>
-        <th>trend/htf</th>
       </tr>
     </thead>
     <tbody>
       <tr>
         <td>best long</td>
         <td><span class="badge ${tradeBadgeClass(longBadge)}">${esc(longBadge)}</span></td>
+        <td>${esc(bestLong?.direction ?? "-")}</td>
+        <td>${esc(bestLong?.direction_bias ?? "-")}</td>
         <td>${esc(bestLong?.timeframe_canonical ?? "-")}</td>
         <td>${esc(bestLong?.operating_state ?? "-")}</td>
         <td>${esc(bestLong ? `${bestLong.confidence_bucket} ${bestLong.confidence_score}` : "-")}</td>
-        <td>${esc(bestLong ? `${bestLong.trend_state}/${bestLong.htf_trend_state}` : "-")}</td>
       </tr>
       <tr>
         <td>best short</td>
         <td><span class="badge ${tradeBadgeClass(shortBadge)}">${esc(shortBadge)}</span></td>
+        <td>${esc(bestShort?.direction ?? "-")}</td>
+        <td>${esc(bestShort?.direction_bias ?? "-")}</td>
         <td>${esc(bestShort?.timeframe_canonical ?? "-")}</td>
         <td>${esc(bestShort?.operating_state ?? "-")}</td>
         <td>${esc(bestShort ? `${bestShort.confidence_bucket} ${bestShort.confidence_score}` : "-")}</td>
-        <td>${esc(bestShort ? `${bestShort.trend_state}/${bestShort.htf_trend_state}` : "-")}</td>
       </tr>
     </tbody>
   </table>
@@ -202,6 +223,7 @@ function renderChecklistTable(checklist: SymbolChecklistItem[]): string {
   data-symbol-norm="${esc(item.symbol_norm)}">
   <td>${esc(item.symbol_norm)}</td>
   <td><span class="badge ${candidateStatusClass(item.candidate_status)}">${esc(item.candidate_status)}</span></td>
+  <td><span class="badge ${directionBiasClass(item.direction_bias)}">${esc(item.direction_bias)}</span></td>
   <td>${item.missing_tf_count}</td>
   <td>${esc(item.missing_tf_list.join(", ") || "none")}</td>
   <td>${item.unknown_hygiene_symbol ? '<span class="badge badge-unknown">YES</span>' : '<span class="badge badge-green">NO</span>'}</td>
@@ -231,6 +253,7 @@ function renderChecklistTable(checklist: SymbolChecklistItem[]): string {
       <tr>
         <th>symbol_norm</th>
         <th>status</th>
+        <th>bias</th>
         <th>missing_count</th>
         <th>missing_tfs</th>
         <th>unknown_hygiene</th>
@@ -273,11 +296,14 @@ export function renderDashboard(
   data-confidence-bucket="${esc(row.confidence_bucket)}"
   data-state-priority="${esc(row.state_priority)}"
   data-operating-state="${esc(row.operating_state)}"
-  data-unknown="${row.unknown_hygiene ? "1" : "0"}">
+  data-unknown="${row.unknown_hygiene ? "1" : "0"}"
+  data-direction-bias="${esc(row.direction_bias)}"
+  data-scenario-direction="${esc(row.direction)}">
 <td>${esc(row.symbol_norm)}</td>
 <td>${esc(row.timeframe_canonical)}</td>
 <td><span class="badge ${tradeBadgeClass(row.trade_badge)}">${esc(row.trade_badge)}</span></td>
-<td>${esc(row.direction)}</td>
+<td><span class="badge ${scenarioDirectionClass(row.direction)}">${esc(row.direction)}</span></td>
+<td><span class="badge ${directionBiasClass(row.direction_bias)}">${esc(row.direction_bias)}</span></td>
 <td><span class="badge ${stateClass(row.operating_state)}">${esc(row.operating_state)}</span></td>
 <td><span class="badge badge-navy">${esc(decodeGateReasonShort(row.gate_reason_code))}</span></td>
 <td><span class="badge ${trendClass(row.trend_state)}">${esc(row.trend_state)}</span></td>
@@ -445,6 +471,9 @@ export function renderDashboard(
         <button class="filter-btn" data-filter="watch">Watch</button>
         <button class="filter-btn" data-filter="stale">Stale</button>
         <button class="filter-btn" data-filter="unknown">Unknown</button>
+        <button class="filter-btn" data-filter="bias-long">Bias Long</button>
+        <button class="filter-btn" data-filter="bias-short">Bias Short</button>
+        <button class="filter-btn" data-filter="bias-mixed">Bias Mixed</button>
       </div>
       <div class="view-toggle">
         <button class="view-btn active" data-view="flat">Flat</button>
@@ -467,6 +496,7 @@ export function renderDashboard(
             <th>tf</th>
             <th>trade</th>
             <th>dir</th>
+            <th>bias</th>
             <th>state</th>
             <th>gate</th>
             <th>trend</th>
@@ -518,12 +548,17 @@ export function renderDashboard(
 
         function matchesFilter(row, filter) {
           const badge = row.dataset.tradeBadge || "";
+          const bias = row.dataset.directionBias || "MIXED";
+
           if (filter === "all") return true;
           if (filter === "long") return badge === "LONG READY";
           if (filter === "short") return badge === "SHORT READY";
           if (filter === "watch") return badge === "WATCH";
           if (filter === "stale") return badge === "STALE";
           if (filter === "unknown") return badge === "UNKNOWN";
+          if (filter === "bias-long") return bias === "LONG";
+          if (filter === "bias-short") return bias === "SHORT";
+          if (filter === "bias-mixed") return bias === "MIXED";
           return true;
         }
 
@@ -532,13 +567,17 @@ export function renderDashboard(
           const shortBadge = card.dataset.bestShortBadge || "";
           const rank = Number(card.dataset.rank || "99");
           const unknown = card.dataset.unknown === "1";
+          const bias = card.dataset.directionBias || "MIXED";
 
           if (filter === "all") return true;
           if (filter === "long") return longBadge === "LONG READY";
           if (filter === "short") return shortBadge === "SHORT READY";
           if (filter === "watch") return longBadge === "WATCH" || shortBadge === "WATCH" || rank === 3;
           if (filter === "stale") return longBadge === "STALE" || shortBadge === "STALE" || rank === 4;
-          if (filter === "unknown") return unknown || rank === 5;
+          if (filter === "unknown") return unknown || rank === 7;
+          if (filter === "bias-long") return bias === "LONG";
+          if (filter === "bias-short") return bias === "SHORT";
+          if (filter === "bias-mixed") return bias === "MIXED";
           return true;
         }
 
@@ -585,6 +624,19 @@ export function renderDashboard(
           if (trade === "STALE") return "badge-stale";
           if (trade === "UNKNOWN") return "badge-unknown";
           return "badge-no-trade";
+        }
+
+        function biasClass(bias) {
+          if (bias === "LONG") return "badge-long";
+          if (bias === "SHORT") return "badge-short";
+          return "badge-gray";
+        }
+
+        function dirClass(dir) {
+          if (dir === "LONG") return "badge-long";
+          if (dir === "SHORT") return "badge-short";
+          if (dir === "MIXED") return "badge-yellow";
+          return "badge-unknown";
         }
 
         function confClass(bucket) {
@@ -663,11 +715,21 @@ export function renderDashboard(
             const bestConfBucket = best.dataset.confidenceBucket || "LOW";
             const bestConfScore = best.dataset.confidenceScore || "0";
 
+            const hasLongBias = group.rows.some(function (row) { return row.dataset.directionBias === "LONG"; });
+            const hasShortBias = group.rows.some(function (row) { return row.dataset.directionBias === "SHORT"; });
+            const groupBias = hasLongBias && !hasShortBias ? "LONG" : hasShortBias && !hasLongBias ? "SHORT" : "MIXED";
+
+            const hasLongScenario = group.rows.some(function (row) { return row.dataset.scenarioDirection === "LONG"; });
+            const hasShortScenario = group.rows.some(function (row) { return row.dataset.scenarioDirection === "SHORT"; });
+            const groupScenario = hasLongScenario && hasShortScenario ? "MIXED" : hasLongScenario ? "LONG" : hasShortScenario ? "SHORT" : "UNKNOWN";
+
             const head = document.createElement("div");
             head.className = "symbol-card-head";
             head.innerHTML =
               '<span class="badge badge-navy">' + group.key + '</span>' +
               '<span class="badge ' + tradeClass(bestTrade) + '">' + bestTrade + '</span>' +
+              '<span class="badge ' + dirClass(groupScenario) + '">DIR ' + groupScenario + '</span>' +
+              '<span class="badge ' + biasClass(groupBias) + '">BIAS ' + groupBias + '</span>' +
               '<span class="badge ' + confClass(bestConfBucket) + '">' + bestConfBucket + ' ' + bestConfScore + '</span>';
 
             const table = document.createElement("table");
@@ -675,10 +737,12 @@ export function renderDashboard(
               .map(function (row) {
                 const trade = row.dataset.tradeBadge || "NO_TRADE";
                 const bucket = row.dataset.confidenceBucket || "LOW";
-                const ageText = row.children[11] ? row.children[11].textContent : "";
+                const ageText = row.children[12] ? row.children[12].textContent : "";
                 return '<tr>' +
                   '<td>' + (row.dataset.timeframe || "") + '</td>' +
                   '<td><span class="badge ' + tradeClass(trade) + '">' + trade + '</span></td>' +
+                  '<td><span class="badge ' + dirClass(row.dataset.scenarioDirection || "UNKNOWN") + '">' + (row.dataset.scenarioDirection || "UNKNOWN") + '</span></td>' +
+                  '<td><span class="badge ' + biasClass(row.dataset.directionBias || "MIXED") + '">' + (row.dataset.directionBias || "MIXED") + '</span></td>' +
                   '<td>' + (row.dataset.operatingState || "") + '</td>' +
                   '<td><span class="badge ' + confClass(bucket) + '">' + bucket + ' ' + (row.dataset.confidenceScore || "0") + '</span></td>' +
                   '<td>' + ageText + '</td>' +
@@ -687,7 +751,7 @@ export function renderDashboard(
               .join("");
 
             table.innerHTML =
-              '<thead><tr><th>tf</th><th>trade</th><th>state</th><th>confidence</th><th>age</th></tr></thead>' +
+              '<thead><tr><th>tf</th><th>trade</th><th>dir</th><th>bias</th><th>state</th><th>confidence</th><th>age</th></tr></thead>' +
               '<tbody>' + rowsHtml + '</tbody>';
 
             card.appendChild(head);

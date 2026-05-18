@@ -9,6 +9,8 @@ function candidate(partial: Partial<ConfluenceCandidate>): ConfluenceCandidate {
     timeframe: "60",
     timeframe_canonical: "60",
     timeframe_minutes: 60,
+    direction: "LONG",
+    direction_bias: "LONG",
     trade_badge: "WATCH",
     operating_state: "RAW_SETUP_FORMING",
     confidence_score: 55,
@@ -32,6 +34,7 @@ function rollup(partial: Partial<ConfluenceRollup>): ConfluenceRollup {
     coverage_count: 3,
     missing_timeframes: ["1D"],
     unknown_hygiene: false,
+    direction_bias: "LONG",
     htf_alignment: "ALIGNED",
     conflict_reasons: ["NONE"],
     best_long: null,
@@ -41,11 +44,14 @@ function rollup(partial: Partial<ConfluenceRollup>): ConfluenceRollup {
   };
 }
 
-test("buildBoardHealth derives candidate status and blockers", () => {
+test("buildBoardHealth derives candidate status, bias and blockers", () => {
   const data: ConfluenceRollup[] = [
     rollup({
       symbol_norm: "CME_MINI_DL:NQ1!",
+      direction_bias: "LONG",
       best_long: candidate({
+        direction: "LONG",
+        direction_bias: "LONG",
         trade_badge: "LONG READY",
         operating_state: "FINAL_SCENARIO_ACTIVE",
         confidence_score: 78,
@@ -57,8 +63,11 @@ test("buildBoardHealth derives candidate status and blockers", () => {
     }),
     rollup({
       symbol_norm: "BINANCE:BTCUSDT",
+      direction_bias: "SHORT",
       best_short: candidate({
         symbol_norm: "BINANCE:BTCUSDT",
+        direction: "SHORT",
+        direction_bias: "SHORT",
         trade_badge: "WATCH",
         secondary_gate_reason: "EXTENDED_AND_WEAK_PARTICIPATION",
         htf_conflict: 1,
@@ -73,6 +82,7 @@ test("buildBoardHealth derives candidate status and blockers", () => {
     }),
     rollup({
       symbol_norm: "TVC:UKOIL",
+      direction_bias: "MIXED",
       missing_timeframes: ["15", "60", "240", "1D"],
       coverage_count: 0,
       unknown_hygiene: false,
@@ -88,9 +98,11 @@ test("buildBoardHealth derives candidate status and blockers", () => {
   const ukoil = out.checklist.find((x) => x.symbol_norm === "TVC:UKOIL");
 
   assert.equal(nq?.candidate_status, "BEST");
+  assert.equal(nq?.direction_bias, "LONG");
   assert.deepEqual(nq?.blockers, []);
 
   assert.equal(btc?.candidate_status, "BEST");
+  assert.equal(btc?.direction_bias, "SHORT");
   assert.deepEqual(btc?.blockers.sort(), [
     "EXTENDED_AND_WEAK_PARTICIPATION",
     "HTF_CONFLICT",
@@ -99,15 +111,16 @@ test("buildBoardHealth derives candidate status and blockers", () => {
   ]);
 
   assert.equal(ukoil?.candidate_status, "MISSING");
+  assert.equal(ukoil?.direction_bias, "MIXED");
   assert.equal(ukoil?.missing_tf_count, 4);
 });
 
 test("buildBoardHealth summary counts and action required", () => {
   const data: ConfluenceRollup[] = [
-    rollup({ symbol_norm: "A", coverage_count: 4, missing_timeframes: [], unknown_hygiene: false, best_long: candidate({}) }),
-    rollup({ symbol_norm: "B", coverage_count: 1, missing_timeframes: ["60", "240", "1D"], unknown_hygiene: true }),
-    rollup({ symbol_norm: "C", coverage_count: 2, missing_timeframes: ["240", "1D"], unknown_hygiene: false }),
-    rollup({ symbol_norm: "D", coverage_count: 0, missing_timeframes: ["15", "60", "240", "1D"], unknown_hygiene: false })
+    rollup({ symbol_norm: "A", direction_bias: "LONG", coverage_count: 4, missing_timeframes: [], unknown_hygiene: false, best_long: candidate({}) }),
+    rollup({ symbol_norm: "B", direction_bias: "SHORT", coverage_count: 1, missing_timeframes: ["60", "240", "1D"], unknown_hygiene: true }),
+    rollup({ symbol_norm: "C", direction_bias: "MIXED", coverage_count: 2, missing_timeframes: ["240", "1D"], unknown_hygiene: false }),
+    rollup({ symbol_norm: "D", direction_bias: "MIXED", coverage_count: 0, missing_timeframes: ["15", "60", "240", "1D"], unknown_hygiene: false })
   ];
 
   const out = buildBoardHealth(data, 4, 4, 7);
