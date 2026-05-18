@@ -1,5 +1,12 @@
 import { decodeGateReasonShort } from "./logic.js";
-import type { ConfluenceRollup, MissingExpectedPair, StateViewRow } from "./types.js";
+import type {
+  BoardHealthSummary,
+  CandidateStatus,
+  ConfluenceRollup,
+  MissingExpectedPair,
+  StateViewRow,
+  SymbolChecklistItem
+} from "./types.js";
 
 function esc(value: unknown): string {
   return String(value)
@@ -37,6 +44,13 @@ function tradeBadgeClass(badge: string): string {
   if (badge === "STALE") return "badge-stale";
   if (badge === "UNKNOWN") return "badge-unknown";
   return "badge-no-trade";
+}
+
+function candidateStatusClass(status: CandidateStatus): string {
+  if (status === "BEST") return "badge-green";
+  if (status === "UNKNOWN") return "badge-unknown";
+  if (status === "MISSING") return "badge-orange";
+  return "badge-gray";
 }
 
 function renderMissingMatrix(missingExpectedPairs: MissingExpectedPair[]): string {
@@ -78,6 +92,33 @@ function renderMissingMatrix(missingExpectedPairs: MissingExpectedPair[]): strin
         .join("\n")}
     </tbody>
   </table>
+</div>`;
+}
+
+function renderBoardHealth(summary: BoardHealthSummary): string {
+  const actionItems = summary.action_required
+    .map(
+      (item) =>
+        `<li><code>${esc(item.symbol_norm)}</code> - <span class="badge ${candidateStatusClass(item.candidate_status)}">${esc(
+          item.candidate_status
+        )}</span> - missing ${item.missing_tf_count} (${esc(item.missing_tf_list.join(", ") || "none")})</li>`
+    )
+    .join("\n");
+
+  return `<div class="widget">
+  <strong>Board Health</strong>
+  <div class="widget-grid">
+    <div><span class="k">Expected symbols/timeframes</span><span class="v">${summary.expected_symbol_count} x ${summary.expected_timeframe_count} = ${summary.expected_symbol_timeframe_count}</span></div>
+    <div><span class="k">Covered vs missing</span><span class="v">${summary.observed_symbol_timeframe_count} / ${summary.expected_symbol_timeframe_count} (missing ${summary.missing_symbol_timeframe_count})</span></div>
+    <div><span class="k">Unknown hygiene symbols</span><span class="v">${summary.unknown_hygiene_symbol_count}</span></div>
+    <div><span class="k">Symbols with candidates</span><span class="v">${summary.symbols_with_candidates_count}</span></div>
+  </div>
+  <div class="action-required">
+    <strong>Action required (top 5)</strong>
+    <ul>
+      ${actionItems || "<li>None</li>"}
+    </ul>
+  </div>
 </div>`;
 }
 
@@ -147,10 +188,70 @@ function renderConfluenceCards(rollups: ConfluenceRollup[]): string {
     .join("\n");
 }
 
+function candidateSummary(direction: "LONG" | "SHORT", item: SymbolChecklistItem): string {
+  const candidate = direction === "LONG" ? item.best_long : item.best_short;
+  if (!candidate) return "-";
+  return `${direction} | tf ${candidate.timeframe_canonical} | ${candidate.confidence_bucket} ${candidate.confidence_score} | gate ${candidate.gate_reason} | sec ${candidate.secondary_gate_reason}`;
+}
+
+function renderChecklistTable(checklist: SymbolChecklistItem[]): string {
+  const rows = checklist
+    .map(
+      (item) => `<tr class="checklist-row"
+  data-status="${esc(item.candidate_status)}"
+  data-symbol-norm="${esc(item.symbol_norm)}">
+  <td>${esc(item.symbol_norm)}</td>
+  <td><span class="badge ${candidateStatusClass(item.candidate_status)}">${esc(item.candidate_status)}</span></td>
+  <td>${item.missing_tf_count}</td>
+  <td>${esc(item.missing_tf_list.join(", ") || "none")}</td>
+  <td>${item.unknown_hygiene_symbol ? '<span class="badge badge-unknown">YES</span>' : '<span class="badge badge-green">NO</span>'}</td>
+  <td>${esc(candidateSummary("LONG", item))}</td>
+  <td>${esc(candidateSummary("SHORT", item))}</td>
+  <td>${esc(item.blockers.join(", ") || "NONE")}</td>
+</tr>`
+    )
+    .join("\n");
+
+  return `<div class="widget">
+  <div class="checklist-head">
+    <strong>Per-Symbol Trade Checklist</strong>
+    <div class="checklist-controls">
+      <div class="checklist-filters">
+        <button class="checklist-filter-btn active" data-check-filter="all">All</button>
+        <button class="checklist-filter-btn" data-check-filter="BEST">BEST</button>
+        <button class="checklist-filter-btn" data-check-filter="UNKNOWN">UNKNOWN</button>
+        <button class="checklist-filter-btn" data-check-filter="MISSING">MISSING</button>
+        <button class="checklist-filter-btn" data-check-filter="EMPTY">EMPTY</button>
+      </div>
+      <input id="checklist-search" type="text" placeholder="Search checklist symbol..." />
+    </div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>symbol_norm</th>
+        <th>status</th>
+        <th>missing_count</th>
+        <th>missing_tfs</th>
+        <th>unknown_hygiene</th>
+        <th>best_long</th>
+        <th>best_short</th>
+        <th>blockers</th>
+      </tr>
+    </thead>
+    <tbody id="checklist-body">
+      ${rows}
+    </tbody>
+  </table>
+</div>`;
+}
+
 export function renderDashboard(
   rows: StateViewRow[],
   missingExpectedPairs: MissingExpectedPair[],
-  confluenceRollups: ConfluenceRollup[]
+  confluenceRollups: ConfluenceRollup[],
+  boardHealth: BoardHealthSummary,
+  symbolChecklist: SymbolChecklistItem[]
 ): string {
   const now = new Date();
   const unknownRows = rows.filter((row) => row.unknown_hygiene);
@@ -210,12 +311,14 @@ export function renderDashboard(
 
   const missingSection = renderMissingMatrix(missingExpectedPairs);
   const confluenceCards = renderConfluenceCards(confluenceRollups);
+  const boardHealthWidget = renderBoardHealth(boardHealth);
+  const checklistWidget = renderChecklistTable(symbolChecklist);
 
   return `<!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>FAMS Trade Readiness Board v3</title>
+    <title>FAMS Trade Readiness Board v3.1</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; margin: 16px; background: #0b1020; color: #f0f4ff; }
@@ -234,7 +337,7 @@ export function renderDashboard(
         padding: 6px 10px;
         font-size: 12px;
       }
-      .filter-btn, .view-btn {
+      .filter-btn, .view-btn, .checklist-filter-btn {
         background: #1a264d;
         color: #dbe8ff;
         border: 1px solid #2f3b63;
@@ -243,9 +346,9 @@ export function renderDashboard(
         font-size: 12px;
         cursor: pointer;
       }
-      .filter-btn.active, .view-btn.active { background: #2f5ed7; border-color: #7fa3ff; color: #fff; }
+      .filter-btn.active, .view-btn.active, .checklist-filter-btn.active { background: #2f5ed7; border-color: #7fa3ff; color: #fff; }
       .counts { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 14px; }
-      .hygiene, .missing {
+      .hygiene, .missing, .widget {
         border: 1px solid #8b3f00;
         background: #2a1b00;
         border-radius: 8px;
@@ -253,7 +356,25 @@ export function renderDashboard(
         margin: 0 0 14px;
         color: #ffd4a8;
       }
+      .widget { border-color: #2f3b63; background: #101936; color: #dbe8ff; }
       .missing { border-color: #4a5a8f; background: #141d36; color: #d0dcff; }
+      .widget-grid { display: grid; gap: 6px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-top: 8px; }
+      .widget-grid .k { display: block; color: #9fb2e6; font-size: 11px; }
+      .widget-grid .v { display: block; font-size: 13px; }
+      .action-required { margin-top: 10px; }
+      .action-required ul { margin: 6px 0 0; padding-left: 18px; }
+      .checklist-head { display: flex; gap: 10px; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+      .checklist-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .checklist-filters { display: flex; gap: 6px; flex-wrap: wrap; }
+      #checklist-search {
+        background: #1a264d;
+        color: #dbe8ff;
+        border: 1px solid #2f3b63;
+        border-radius: 8px;
+        padding: 6px 10px;
+        font-size: 12px;
+        min-width: 220px;
+      }
       table { border-collapse: collapse; width: 100%; font-size: 12px; }
       th, td { border: 1px solid #2f3b63; padding: 6px; text-align: left; white-space: nowrap; }
       th { position: sticky; top: 0; background: #15203f; }
@@ -302,7 +423,7 @@ export function renderDashboard(
     </style>
   </head>
   <body>
-    <h1>FAMS Trade Readiness Board v3</h1>
+    <h1>FAMS Trade Readiness Board v3.1</h1>
     <div class="meta">Generated at ${esc(now.toISOString())} | Visible items: <span id="visible-count">${rows.length}</span></div>
 
     <div class="counts">
@@ -312,6 +433,9 @@ export function renderDashboard(
       <span class="badge badge-gray">NO_TRADE_STILL: ${counts.NO_TRADE_STILL || 0}</span>
       <span class="badge badge-red">STALE_DATA: ${counts.STALE_DATA || 0}</span>
     </div>
+
+    ${boardHealthWidget}
+    ${checklistWidget}
 
     <div class="toolbar">
       <div class="filters">
@@ -384,8 +508,13 @@ export function renderDashboard(
         const rows = Array.from(document.querySelectorAll(".board-row"));
         const confluenceCards = Array.from(document.querySelectorAll(".confluence-card"));
 
+        const checklistRows = Array.from(document.querySelectorAll(".checklist-row"));
+        const checklistSearch = document.getElementById("checklist-search");
+        const checklistFilterButtons = Array.from(document.querySelectorAll(".checklist-filter-btn"));
+
         let activeFilter = "all";
         let activeView = "flat";
+        let activeChecklistFilter = "all";
 
         function matchesFilter(row, filter) {
           const badge = row.dataset.tradeBadge || "";
@@ -426,6 +555,17 @@ export function renderDashboard(
           const q = query.toLowerCase();
           const symbolNorm = (card.dataset.symbolNorm || "").toLowerCase();
           return symbolNorm.includes(q);
+        }
+
+        function matchesChecklistFilter(row, filter) {
+          if (filter === "all") return true;
+          return (row.dataset.status || "") === filter;
+        }
+
+        function matchesChecklistSearch(row, query) {
+          if (!query) return true;
+          const q = query.toLowerCase();
+          return (row.dataset.symbolNorm || "").toLowerCase().includes(q);
         }
 
         function timeframeRank(tf, tfMin) {
@@ -556,7 +696,15 @@ export function renderDashboard(
           });
         }
 
-        function apply() {
+        function applyChecklist() {
+          const q = checklistSearch ? String(checklistSearch.value || "") : "";
+          checklistRows.forEach(function (row) {
+            const show = matchesChecklistFilter(row, activeChecklistFilter) && matchesChecklistSearch(row, q);
+            row.style.display = show ? "" : "none";
+          });
+        }
+
+        function applyMain() {
           const query = searchInput ? String(searchInput.value || "") : "";
           const filteredRows = rows.filter(function (row) {
             return matchesFilter(row, activeFilter) && matchesSearch(row, query);
@@ -588,7 +736,7 @@ export function renderDashboard(
           btn.addEventListener("click", function () {
             activeFilter = btn.dataset.filter || "all";
             setActiveButtons(filterButtons, "filter", activeFilter);
-            apply();
+            applyMain();
           });
         });
 
@@ -603,17 +751,32 @@ export function renderDashboard(
               confluenceView.classList.toggle("hidden", activeView !== "confluence");
             }
 
-            apply();
+            applyMain();
+          });
+        });
+
+        checklistFilterButtons.forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            activeChecklistFilter = btn.dataset.checkFilter || "all";
+            setActiveButtons(checklistFilterButtons, "checkFilter", activeChecklistFilter);
+            applyChecklist();
           });
         });
 
         if (searchInput) {
           searchInput.addEventListener("input", function () {
-            apply();
+            applyMain();
           });
         }
 
-        apply();
+        if (checklistSearch) {
+          checklistSearch.addEventListener("input", function () {
+            applyChecklist();
+          });
+        }
+
+        applyMain();
+        applyChecklist();
       })();
     </script>
   </body>

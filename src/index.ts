@@ -8,6 +8,7 @@ import {
 } from "./config/whitelist.js";
 import { buildConfluenceRollups } from "./confluence.js";
 import { FamsDb } from "./db.js";
+import { buildBoardHealth } from "./health.js";
 import { parsePayload } from "./validation.js";
 import {
   decodeGateReason,
@@ -20,7 +21,14 @@ import {
 } from "./logic.js";
 import { deriveState, sortStateRows } from "./deriveState.js";
 import { renderDashboard } from "./dashboard.js";
-import type { ConfluenceRollup, LatestStateRow, MissingExpectedPair, StateViewRow } from "./types.js";
+import type {
+  BoardHealthSummary,
+  ConfluenceRollup,
+  LatestStateRow,
+  MissingExpectedPair,
+  StateViewRow,
+  SymbolChecklistItem
+} from "./types.js";
 
 const config = loadConfig();
 const db = new FamsDb(config.dbPath);
@@ -92,6 +100,8 @@ interface StateBundle {
   expectedPairCount: number;
   observedExpectedPairCount: number;
   confluenceRollups: ConfluenceRollup[];
+  boardHealth: BoardHealthSummary;
+  symbolChecklist: SymbolChecklistItem[];
 }
 
 const EXPECTED_MATRIX: MissingExpectedPair[] = EXPECTED_SYMBOL_NORMS.flatMap((symbolNorm) =>
@@ -167,13 +177,21 @@ function buildStateBundle(now = new Date()): StateBundle {
 
   const missingExpectedPairs = EXPECTED_MATRIX.filter((pair) => !observedExpectedKeys.has(pair.key));
   const confluenceRollups = buildConfluenceRollups(rows);
+  const health = buildBoardHealth(
+    confluenceRollups,
+    EXPECTED_SYMBOL_NORMS.length,
+    EXPECTED_TIMEFRAMES.length,
+    observedExpectedKeys.size
+  );
 
   return {
     rows,
     missingExpectedPairs,
     expectedPairCount: EXPECTED_MATRIX.length,
     observedExpectedPairCount: observedExpectedKeys.size,
-    confluenceRollups
+    confluenceRollups,
+    boardHealth: health.summary,
+    symbolChecklist: health.checklist
   };
 }
 
@@ -247,6 +265,19 @@ app.get("/api/state", (_req, res) => {
   });
 });
 
+app.get("/api/health.json", (_req, res) => {
+  const now = new Date();
+  const bundle = buildStateBundle(now);
+
+  return res.status(200).json({
+    ok: true,
+    summary: bundle.boardHealth,
+    checklist_count: bundle.symbolChecklist.length,
+    checklist: bundle.symbolChecklist,
+    generated_at_utc: now.toISOString()
+  });
+});
+
 app.get("/api/confluence.json", (_req, res) => {
   const now = new Date();
   const bundle = buildStateBundle(now);
@@ -270,7 +301,15 @@ app.get("/dashboard", (_req, res) => {
   res
     .status(200)
     .type("html")
-    .send(renderDashboard(bundle.rows, bundle.missingExpectedPairs, bundle.confluenceRollups));
+    .send(
+      renderDashboard(
+        bundle.rows,
+        bundle.missingExpectedPairs,
+        bundle.confluenceRollups,
+        bundle.boardHealth,
+        bundle.symbolChecklist
+      )
+    );
 });
 
 const server = app.listen(config.port, config.host, () => {

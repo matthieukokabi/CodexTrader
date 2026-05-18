@@ -138,3 +138,42 @@ export interface ConfluenceRollup {
   best_short: ConfluenceCandidate | null;
   sort_rank: number;
 }
+
+export type CandidateStatus = "BEST" | "UNKNOWN" | "MISSING" | "EMPTY";
+
+export type HealthBlocker =
+  | "HTF_CONFLICT"
+  | "WEAK_PARTICIPATION"
+  | "NO_CLEAN_INTERACTION"
+  | "EXTENDED_AND_WEAK_PARTICIPATION";
+
+export interface SymbolChecklistItem {
+  symbol_norm: string;
+  expected_tf_count: number;
+  observed_tf_count: number;
+  missing_tf_count: number;
+  missing_tf_list: string[];
+  unknown_hygiene_symbol: boolean;
+  candidate_status: CandidateStatus;
+  blockers: HealthBlocker[];
+  best_long: ConfluenceCandidate | null;
+  best_short: ConfluenceCandidate | null;
+}
+
+export interface ActionRequiredItem {
+  symbol_norm: string;
+  candidate_status: CandidateStatus;
+  missing_tf_count: number;
+  missing_tf_list: string[];
+}
+
+export interface BoardHealthSummary {
+  expected_symbol_count: number;
+  expected_timeframe_count: number;
+  expected_symbol_timeframe_count: number;
+  observed_symbol_timeframe_count: number;
+  missing_symbol_timeframe_count: number;
+  unknown_hygiene_symbol_count: number;
+  symbols_with_candidates_count: number;
+  action_required: ActionRequiredItem[];
+}

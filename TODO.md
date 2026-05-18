@@ -7,5 +7,6 @@
 - [x] Upgrade board v2 with confidence scoring, trade badge, symbol search, collapsed view, and CSV export.
 - [x] Ship Cleanliness v2.1: whitelist enforcement, canonical symbol normalization, missing expected matrix, weekend 1D stale override, and safe maintenance cleanup script.
 - [x] Ship Confluence v3: symbol confluence cards, multi-timeframe best long/short rollups, and /api/confluence.json endpoint.
+- [x] Ship health widget + per-symbol trade checklist with /api/health.json rollups and blockers.
 - [ ] Configure nginx + TLS + public subdomain (manual next step).
 - [ ] Create TradingView alerts and webhook wiring (manual next step).
