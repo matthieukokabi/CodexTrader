@@ -1,6 +1,13 @@
 import express from "express";
 import rateLimit from "express-rate-limit";
 import { loadConfig } from "./config.js";
+import {
+  buildExpectedPairKey,
+  EXPECTED_SYMBOL_NORMS,
+  EXPECTED_TIMEFRAMES,
+  normalizeSymbolNormForMatch,
+  normalizeTimeframeForMatch
+} from "./config/whitelist.js";
 import { FamsDb } from "./db.js";
 import { parsePayload } from "./validation.js";
 import {
@@ -14,7 +21,7 @@ import {
 } from "./logic.js";
 import { deriveState, sortStateRows } from "./deriveState.js";
 import { renderDashboard } from "./dashboard.js";
-import type { LatestStateRow, StateViewRow } from "./types.js";
+import type { LatestStateRow, MissingExpectedPair, StateViewRow } from "./types.js";
 
 const config = loadConfig();
 const db = new FamsDb(config.dbPath);
@@ -33,6 +40,7 @@ const webhookLimiter = rateLimit({
 const CSV_COLUMNS: Array<keyof StateViewRow> = [
   "symbol",
   "timeframe",
+  "timeframe_canonical",
   "timeframe_minutes",
   "symbol_norm",
   "collapsed_group_id",
@@ -66,6 +74,10 @@ const CSV_COLUMNS: Array<keyof StateViewRow> = [
   "breakout_failure",
   "bar_confirmed",
   "no_trade_gate",
+  "expected_symbol",
+  "expected_timeframe",
+  "expected_pair",
+  "missing_expected",
   "last_price",
   "bar_time_utc",
   "received_at_utc",
@@ -75,11 +87,27 @@ const CSV_COLUMNS: Array<keyof StateViewRow> = [
   "unknown_hygiene"
 ];
 
+interface StateBundle {
+  rows: StateViewRow[];
+  missingExpectedPairs: MissingExpectedPair[];
+  expectedPairCount: number;
+  observedExpectedPairCount: number;
+}
+
+const EXPECTED_MATRIX: MissingExpectedPair[] = EXPECTED_SYMBOL_NORMS.flatMap((symbolNorm) =>
+  EXPECTED_TIMEFRAMES.map((timeframe) => ({
+    symbol_norm: symbolNorm,
+    timeframe,
+    key: buildExpectedPairKey(symbolNorm, timeframe)
+  }))
+);
+
 function toStateViewRow(row: LatestStateRow, now: Date): StateViewRow {
   const derived = deriveState(row, now);
   return {
     symbol: row.symbol,
     timeframe: row.timeframe,
+    timeframe_canonical: derived.timeframeCanonical,
     timeframe_minutes: derived.timeframeMinutes,
     market_type_code: row.fams_market_type,
     market_type: decodeMarketType(row.fams_market_type),
@@ -107,6 +135,10 @@ function toStateViewRow(row: LatestStateRow, now: Date): StateViewRow {
     breakout_failure: row.fams_breakout_failure,
     bar_confirmed: row.fams_bar_confirmed,
     no_trade_gate: row.fams_no_trade_gate,
+    expected_symbol: derived.expectedSymbol,
+    expected_timeframe: derived.expectedTimeframe,
+    expected_pair: derived.expectedPair,
+    missing_expected: derived.missingExpected,
     last_price: row.close,
     bar_time_utc: row.bar_time_utc,
     received_at_utc: row.received_at_utc,
@@ -123,9 +155,24 @@ function toStateViewRow(row: LatestStateRow, now: Date): StateViewRow {
   };
 }
 
-function buildStateRows(now = new Date()): StateViewRow[] {
+function buildStateBundle(now = new Date()): StateBundle {
   const mapped = db.getLatestState().map((row) => toStateViewRow(row, now));
-  return sortStateRows(mapped);
+  const rows = sortStateRows(mapped);
+
+  const observedExpectedKeys = new Set(
+    rows
+      .filter((row) => row.expected_pair)
+      .map((row) => buildExpectedPairKey(row.symbol_norm, row.timeframe_canonical))
+  );
+
+  const missingExpectedPairs = EXPECTED_MATRIX.filter((pair) => !observedExpectedKeys.has(pair.key));
+
+  return {
+    rows,
+    missingExpectedPairs,
+    expectedPairCount: EXPECTED_MATRIX.length,
+    observedExpectedPairCount: observedExpectedKeys.size
+  };
 }
 
 function csvEscape(value: unknown): string {
@@ -181,19 +228,32 @@ app.post("/api/webhook/tradingview/fams/:ingestKey", webhookLimiter, (req, res) 
 
 app.get("/api/state", (_req, res) => {
   const now = new Date();
-  const rows = buildStateRows(now);
-  return res.status(200).json({ ok: true, count: rows.length, rows, generated_at_utc: now.toISOString() });
+  const bundle = buildStateBundle(now);
+
+  return res.status(200).json({
+    ok: true,
+    count: bundle.rows.length,
+    rows: bundle.rows,
+    expected_symbol_norms: EXPECTED_SYMBOL_NORMS,
+    expected_timeframes: EXPECTED_TIMEFRAMES,
+    expected_pair_count: bundle.expectedPairCount,
+    observed_expected_pair_count: bundle.observedExpectedPairCount,
+    missing_expected_count: bundle.missingExpectedPairs.length,
+    missing_expected: bundle.missingExpectedPairs,
+    missing_expected_pairs: bundle.missingExpectedPairs,
+    generated_at_utc: now.toISOString()
+  });
 });
 
 app.get("/api/state.csv", (_req, res) => {
-  const rows = buildStateRows(new Date());
-  const csv = toCsv(rows);
+  const bundle = buildStateBundle(new Date());
+  const csv = toCsv(bundle.rows);
   res.status(200).type("text/csv; charset=utf-8").send(csv);
 });
 
 app.get("/dashboard", (_req, res) => {
-  const rows = buildStateRows(new Date());
-  res.status(200).type("html").send(renderDashboard(rows));
+  const bundle = buildStateBundle(new Date());
+  res.status(200).type("html").send(renderDashboard(bundle.rows, bundle.missingExpectedPairs));
 });
 
 const server = app.listen(config.port, config.host, () => {

@@ -10,7 +10,8 @@
     "start": "node dist/index.js",
     "test": "node --test dist/tests/*.test.js",
     "test:src": "node --import tsx --test src/tests/*.test.ts",
-    "validate": "npm run typecheck && npm run build && npm run test"
+    "validate": "npm run typecheck && npm run build && npm run test",
+    "maintenance:clean": "node --import tsx src/scripts/maintenance-clean.ts"
   },
   "dependencies": {
     "express": "^4.21.2",

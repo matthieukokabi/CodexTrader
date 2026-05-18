@@ -1,3 +1,10 @@
+import {
+  buildExpectedPairKey,
+  isExpectedSymbolNorm,
+  isExpectedTimeframe,
+  normalizeSymbolNormForMatch,
+  normalizeTimeframeForMatch
+} from "./config/whitelist.js";
 import type {
   ConfidenceBucket,
   Direction,
@@ -27,46 +34,61 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+export function canonicalizeTimeframe(timeframe: string): string {
+  return normalizeTimeframeForMatch(timeframe);
+}
+
 function parseTimeframeToMinutes(timeframe: string): number | null {
-  const tf = timeframe.trim().toUpperCase();
+  const tf = canonicalizeTimeframe(timeframe);
+  if (tf === "15") return 15;
+  if (tf === "60") return 60;
+  if (tf === "240") return 240;
+  if (tf === "1D") return 1440;
   if (/^\d+$/.test(tf)) return Number(tf);
   if (/^\d+M$/.test(tf)) return Number(tf.slice(0, -1));
   if (/^\d+H$/.test(tf)) return Number(tf.slice(0, -1)) * 60;
-  if (tf === "D" || tf === "1D") return 1440;
-  if (tf === "W" || tf === "1W") return 10080;
+  if (tf === "1W") return 10080;
   return null;
 }
 
-function staleThresholdMs(timeframe: string): number {
-  const minutes = parseTimeframeToMinutes(timeframe);
-  if (minutes === 15) return 45 * 60 * 1000;
-  if (minutes === 60) return 135 * 60 * 1000;
-  if (minutes === 240) return 540 * 60 * 1000;
-  if (minutes === 1440) return 2160 * 60 * 1000;
+function isWeekend(date: Date): boolean {
+  const day = date.getUTCDay();
+  return day === 0 || day === 6;
+}
+
+function staleThresholdMs(timeframe: string, now: Date): number {
+  const tf = canonicalizeTimeframe(timeframe);
+  if (tf === "15") return 45 * 60 * 1000;
+  if (tf === "60") return 135 * 60 * 1000;
+  if (tf === "240") return 540 * 60 * 1000;
+  if (tf === "1D") {
+    return (isWeekend(now) ? 4320 : 2160) * 60 * 1000;
+  }
   return 24 * 60 * 60 * 1000;
 }
 
-function normalizeText(value: string): string {
-  return value.trim().toUpperCase().replace(/\s+/g, "");
+function normalizeToken(value: string): string {
+  return value.trim().replace(/\s+/g, "");
 }
 
-function normalizeSymbol(exchange: string, symbol: string): string {
-  const symbolNorm = normalizeText(symbol);
-  if (symbolNorm.includes(":")) {
-    return symbolNorm;
+export function canonicalizeSymbolNorm(exchange: string, symbol: string): string {
+  const rawSymbol = symbol.trim();
+  if (rawSymbol.includes(":")) {
+    const [rawExchange, ...rawRest] = rawSymbol.split(":");
+    const exchangePart = normalizeToken(rawExchange).toUpperCase();
+    const tickerPart = rawRest.join(":").trim();
+    return tickerPart ? `${exchangePart}:${tickerPart}` : exchangePart;
   }
-  const exchangeNorm = normalizeText(exchange);
-  if (!exchangeNorm) {
-    return symbolNorm;
+
+  const exchangePart = normalizeToken(exchange);
+  if (exchangePart) {
+    return `${exchangePart.toUpperCase()}:${rawSymbol}`;
   }
-  return `${exchangeNorm}:${symbolNorm}`;
+
+  return rawSymbol;
 }
 
-function buildCollapsedGroupId(symbolNorm: string): string {
-  return symbolNorm.replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "UNKNOWN_GROUP";
-}
-
-function deriveDirection(row: LatestStateRow): Direction {
+export function deriveDirectionFromRow(row: LatestStateRow): Direction {
   if (row.fams_market_type === 4) return "UNKNOWN";
   if ([1, 2].includes(row.fams_raw_scenario_code) || [1, 2].includes(row.fams_scenario_code)) {
     return "LONG";
@@ -174,6 +196,7 @@ export interface DerivedState {
   stale: boolean;
   ageMs: number;
   timeframeMinutes: number | null;
+  timeframeCanonical: string;
   operatingState: OperatingState;
   statePriority: number;
   direction: Direction;
@@ -183,25 +206,40 @@ export interface DerivedState {
   confidenceBucket: ConfidenceBucket;
   tradeBadge: TradeBadge;
   symbolNorm: string;
+  symbolNormMatch: string;
   collapsedGroupId: string;
+  expectedSymbol: boolean;
+  expectedTimeframe: boolean;
+  expectedPair: boolean;
+  missingExpected: boolean;
+  expectedPairKey: string;
 }
 
 export function deriveState(row: LatestStateRow, now = new Date()): DerivedState {
   const barTime = Date.parse(row.bar_time_utc);
   const ageMs = Number.isNaN(barTime) ? Number.MAX_SAFE_INTEGER : Math.max(0, now.getTime() - barTime);
-  const stale = ageMs > staleThresholdMs(row.timeframe);
+  const stale = ageMs > staleThresholdMs(row.timeframe, now);
   const operatingState = deriveOperatingStateFromRow(row, stale);
-  const direction = deriveDirection(row);
+  const direction = deriveDirectionFromRow(row);
+  const timeframeCanonical = canonicalizeTimeframe(row.timeframe);
   const timeframeMinutes = parseTimeframeToMinutes(row.timeframe);
-  const unknownHygiene = row.fams_market_type === 4 || direction === "UNKNOWN";
+
+  const symbolNorm = canonicalizeSymbolNorm(row.exchange, row.symbol);
+  const symbolNormMatch = normalizeSymbolNormForMatch(symbolNorm);
+  const expectedSymbol = isExpectedSymbolNorm(symbolNorm);
+  const expectedTimeframe = isExpectedTimeframe(timeframeCanonical);
+  const expectedPair = expectedSymbol && expectedTimeframe;
+  const expectedPairKey = buildExpectedPairKey(symbolNorm, timeframeCanonical);
+
+  const unknownHygiene = !expectedSymbol || row.fams_market_type === 4 || direction === "UNKNOWN";
   const confidenceScore = deriveConfidenceScore(row, operatingState);
   const confidenceBucket = deriveConfidenceBucket(confidenceScore);
-  const symbolNorm = normalizeSymbol(row.exchange, row.symbol);
 
   return {
     stale,
     ageMs,
     timeframeMinutes,
+    timeframeCanonical,
     operatingState,
     statePriority: STATE_PRIORITY[operatingState],
     direction,
@@ -211,13 +249,19 @@ export function deriveState(row: LatestStateRow, now = new Date()): DerivedState
     confidenceBucket,
     tradeBadge: deriveTradeBadge(unknownHygiene, stale, operatingState, direction),
     symbolNorm,
-    collapsedGroupId: buildCollapsedGroupId(symbolNorm)
+    symbolNormMatch,
+    collapsedGroupId: symbolNormMatch.replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "UNKNOWN_GROUP",
+    expectedSymbol,
+    expectedTimeframe,
+    expectedPair,
+    missingExpected: !expectedPair,
+    expectedPairKey
   };
 }
 
 interface SortableStateRow {
   operating_state: OperatingState;
-  symbol: string;
+  symbol_norm: string;
   timeframe: string;
   timeframe_minutes: number | null;
 }
@@ -228,7 +272,7 @@ export function sortStateRows<T extends SortableStateRow>(rows: T[]): T[] {
     const pb = STATE_PRIORITY[b.operating_state] ?? 99;
     if (pa !== pb) return pa - pb;
 
-    const symbolCmp = a.symbol.localeCompare(b.symbol, "en", { sensitivity: "base" });
+    const symbolCmp = a.symbol_norm.localeCompare(b.symbol_norm, "en", { sensitivity: "base" });
     if (symbolCmp !== 0) return symbolCmp;
 
     const ta = a.timeframe_minutes ?? Number.MAX_SAFE_INTEGER;

@@ -53,6 +53,7 @@ export interface StateViewRow {
   symbol: string;
   timeframe: string;
   timeframe_minutes: number | null;
+  timeframe_canonical: string;
   market_type_code: number;
   market_type: string;
   final_scenario_code: number;
@@ -92,4 +93,14 @@ export interface StateViewRow {
   trade_badge: TradeBadge;
   symbol_norm: string;
   collapsed_group_id: string;
+  expected_symbol: boolean;
+  expected_timeframe: boolean;
+  expected_pair: boolean;
+  missing_expected: boolean;
+}
+
+export interface MissingExpectedPair {
+  symbol_norm: string;
+  timeframe: string;
+  key: string;
 }

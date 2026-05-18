@@ -39,10 +39,16 @@ test("returns FINAL_SCENARIO_ACTIVE and LONG READY for active final long scenari
   row.fams_scenario_code = 1;
   row.fams_raw_scenario_code = 1;
   const out = deriveState(row, new Date("2026-05-14T10:05:05Z"));
+
   assert.equal(out.operatingState, "FINAL_SCENARIO_ACTIVE");
   assert.equal(out.readiness, "READY");
   assert.equal(out.direction, "LONG");
   assert.equal(out.tradeBadge, "LONG READY");
+  assert.equal(out.unknownHygiene, false);
+  assert.equal(out.expectedSymbol, true);
+  assert.equal(out.expectedTimeframe, true);
+  assert.equal(out.expectedPair, true);
+  assert.equal(out.missingExpected, false);
 });
 
 test("returns RAW_SETUP_FORMING and WATCH when raw active and blocked only by bar confirmation", () => {
@@ -51,7 +57,9 @@ test("returns RAW_SETUP_FORMING and WATCH when raw active and blocked only by ba
   row.fams_scenario_code = 4;
   row.fams_gate_reason_code = 1;
   row.fams_secondary_gate_reason_code = 0;
+
   const out = deriveState(row, new Date("2026-05-14T10:10:05Z"));
+
   assert.equal(out.operatingState, "RAW_SETUP_FORMING");
   assert.equal(out.direction, "LONG");
   assert.equal(out.tradeBadge, "WATCH");
@@ -61,7 +69,9 @@ test("returns STRUCTURAL_READY_WATCH when structural blocker exists", () => {
   const row = baseRow();
   row.fams_raw_scenario_code = 1;
   row.fams_secondary_gate_reason_code = 4;
+
   const out = deriveState(row, new Date("2026-05-14T10:10:05Z"));
+
   assert.equal(out.operatingState, "STRUCTURAL_READY_WATCH");
   assert.equal(out.tradeBadge, "WATCH");
 });
@@ -69,17 +79,55 @@ test("returns STRUCTURAL_READY_WATCH when structural blocker exists", () => {
 test("returns STALE_DATA when age exceeds threshold from bar_time_utc", () => {
   const row = baseRow();
   row.fams_raw_scenario_code = 1;
+
   const out = deriveState(row, new Date("2026-05-14T10:46:01Z"));
+
   assert.equal(out.operatingState, "STALE_DATA");
   assert.equal(out.stale, true);
   assert.equal(out.tradeBadge, "STALE");
 });
 
+test("applies weekend staleness override for 1D timeframe", () => {
+  const row = baseRow();
+  row.timeframe = "1D";
+  row.bar_time_utc = "2026-05-15T00:00:00Z";
+  row.fams_scenario_code = 1;
+  row.fams_raw_scenario_code = 1;
+
+  const weekendNow = new Date("2026-05-17T16:00:00Z"); // Sunday, +40h
+  const weekdayNow = new Date("2026-05-18T16:00:00Z"); // Monday, +64h
+
+  const weekendOut = deriveState(row, weekendNow);
+  const weekdayOut = deriveState(row, weekdayNow);
+
+  assert.equal(weekendOut.stale, false);
+  assert.equal(weekendOut.operatingState, "FINAL_SCENARIO_ACTIVE");
+  assert.equal(weekdayOut.stale, true);
+  assert.equal(weekdayOut.operatingState, "STALE_DATA");
+});
+
 test("flags unknown hygiene when market type is unknown", () => {
   const row = baseRow();
   row.fams_market_type = 4;
+
   const out = deriveState(row, new Date("2026-05-14T10:10:05Z"));
+
   assert.equal(out.direction, "UNKNOWN");
+  assert.equal(out.unknownHygiene, true);
+  assert.equal(out.tradeBadge, "UNKNOWN");
+});
+
+test("flags unknown hygiene when symbol is outside whitelist", () => {
+  const row = baseRow();
+  row.exchange = "OANDA";
+  row.symbol = "EURUSD";
+  row.fams_scenario_code = 1;
+  row.fams_raw_scenario_code = 1;
+
+  const out = deriveState(row, new Date("2026-05-14T10:10:05Z"));
+
+  assert.equal(out.symbolNorm, "OANDA:EURUSD");
+  assert.equal(out.expectedSymbol, false);
   assert.equal(out.unknownHygiene, true);
   assert.equal(out.tradeBadge, "UNKNOWN");
 });
@@ -96,15 +144,33 @@ test("computes confidence score and bucket with rule stack", () => {
   row.fams_htf_trend_state = 1;
 
   const out = deriveState(row, new Date("2026-05-14T10:05:05Z"));
+
   assert.equal(out.confidenceScore, 90);
   assert.equal(out.confidenceBucket, "HIGH");
 });
 
-test("normalizes symbol and collapsed group id", () => {
+test("normalizes symbol and collapsed group id while preserving ticker case", () => {
   const row = baseRow();
   row.exchange = "CME_MINI_DL";
   row.symbol = "es1!";
+
   const out = deriveState(row, new Date("2026-05-14T10:05:05Z"));
-  assert.equal(out.symbolNorm, "CME_MINI_DL:ES1!");
+
+  assert.equal(out.symbolNorm, "CME_MINI_DL:es1!");
+  assert.equal(out.symbolNormMatch, "CME_MINI_DL:ES1!");
   assert.equal(out.collapsedGroupId, "CME_MINI_DL_ES1");
+});
+
+test("marks non-canonical timeframe as not expected", () => {
+  const row = baseRow();
+  row.timeframe = "30";
+  row.fams_scenario_code = 1;
+  row.fams_raw_scenario_code = 1;
+
+  const out = deriveState(row, new Date("2026-05-14T10:05:05Z"));
+
+  assert.equal(out.timeframeCanonical, "30");
+  assert.equal(out.expectedTimeframe, false);
+  assert.equal(out.expectedPair, false);
+  assert.equal(out.missingExpected, true);
 });

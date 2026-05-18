@@ -1,5 +1,5 @@
 import { decodeGateReasonShort } from "./logic.js";
-import type { StateViewRow } from "./types.js";
+import type { MissingExpectedPair, StateViewRow } from "./types.js";
 
 function esc(value: unknown): string {
   return String(value)
@@ -39,7 +39,49 @@ function tradeBadgeClass(badge: string): string {
   return "badge-no-trade";
 }
 
-export function renderDashboard(rows: StateViewRow[]): string {
+function renderMissingMatrix(missingExpectedPairs: MissingExpectedPair[]): string {
+  if (missingExpectedPairs.length === 0) {
+    return `<div class="missing"><strong>Missing expected symbols/timeframes</strong><div>None. Expected matrix is complete.</div></div>`;
+  }
+
+  const grouped = new Map<string, string[]>();
+  missingExpectedPairs.forEach((pair) => {
+    const list = grouped.get(pair.symbol_norm) || [];
+    list.push(pair.timeframe);
+    grouped.set(pair.symbol_norm, list);
+  });
+
+  const rows = Array.from(grouped.entries())
+    .map(([symbolNorm, timeframes]) => ({
+      symbolNorm,
+      timeframes: [...timeframes].sort((a, b) => {
+        const rank = (tf: string) => (tf === "15" ? 15 : tf === "60" ? 60 : tf === "240" ? 240 : tf === "1D" ? 1440 : 99999);
+        return rank(a) - rank(b);
+      })
+    }))
+    .sort((a, b) => {
+      if (b.timeframes.length !== a.timeframes.length) return b.timeframes.length - a.timeframes.length;
+      return a.symbolNorm.localeCompare(b.symbolNorm, "en", { sensitivity: "base" });
+    });
+
+  return `<div class="missing">
+  <strong>Missing expected symbols/timeframes</strong>
+  <div>Missing pairs: ${missingExpectedPairs.length}</div>
+  <table>
+    <thead><tr><th>symbol_norm</th><th>missing timeframes</th><th>count</th></tr></thead>
+    <tbody>
+      ${rows
+        .map(
+          (row) =>
+            `<tr><td>${esc(row.symbolNorm)}</td><td>${esc(row.timeframes.join(", "))}</td><td>${row.timeframes.length}</td></tr>`
+        )
+        .join("\n")}
+    </tbody>
+  </table>
+</div>`;
+}
+
+export function renderDashboard(rows: StateViewRow[], missingExpectedPairs: MissingExpectedPair[]): string {
   const now = new Date();
   const unknownRows = rows.filter((row) => row.unknown_hygiene);
 
@@ -61,8 +103,8 @@ export function renderDashboard(rows: StateViewRow[]): string {
   data-state-priority="${esc(row.state_priority)}"
   data-operating-state="${esc(row.operating_state)}"
   data-unknown="${row.unknown_hygiene ? "1" : "0"}">
-<td>${esc(row.symbol)}</td>
-<td>${esc(row.timeframe)}</td>
+<td>${esc(row.symbol_norm)}</td>
+<td>${esc(row.timeframe_canonical)}</td>
 <td><span class="badge ${tradeBadgeClass(row.trade_badge)}">${esc(row.trade_badge)}</span></td>
 <td>${esc(row.direction)}</td>
 <td><span class="badge ${stateClass(row.operating_state)}">${esc(row.operating_state)}</span></td>
@@ -83,23 +125,26 @@ export function renderDashboard(rows: StateViewRow[]): string {
     unknownRows.length > 0
       ? `<div class="hygiene">
   <strong>Symbol Hygiene Warning</strong>
-  <div>UNKNOWN market type or UNKNOWN direction rows are flagged and available under the <code>Unknown</code> filter.</div>
+  <div>Rows flagged when symbol is outside whitelist, market type is UNKNOWN, or direction is UNKNOWN.</div>
   <ul>
     ${unknownRows
+      .slice(0, 30)
       .map(
         (row) =>
-          `<li>${esc(row.symbol)} / ${esc(row.timeframe)} - market=${esc(row.market_type)} direction=${esc(row.direction)}</li>`
+          `<li>${esc(row.symbol_norm)} / ${esc(row.timeframe_canonical)} - market=${esc(row.market_type)} direction=${esc(row.direction)}</li>`
       )
       .join("\n")}
   </ul>
 </div>`
       : "";
 
+  const missingSection = renderMissingMatrix(missingExpectedPairs);
+
   return `<!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>FAMS Trade Readiness Board v2</title>
+    <title>FAMS Trade Readiness Board v2.1</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; margin: 16px; background: #0b1020; color: #f0f4ff; }
@@ -129,7 +174,7 @@ export function renderDashboard(rows: StateViewRow[]): string {
       }
       .filter-btn.active, .view-btn.active { background: #2f5ed7; border-color: #7fa3ff; color: #fff; }
       .counts { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 14px; }
-      .hygiene {
+      .hygiene, .missing {
         border: 1px solid #8b3f00;
         background: #2a1b00;
         border-radius: 8px;
@@ -137,6 +182,7 @@ export function renderDashboard(rows: StateViewRow[]): string {
         margin: 0 0 14px;
         color: #ffd4a8;
       }
+      .missing { border-color: #4a5a8f; background: #141d36; color: #d0dcff; }
       table { border-collapse: collapse; width: 100%; font-size: 12px; }
       th, td { border: 1px solid #2f3b63; padding: 6px; text-align: left; white-space: nowrap; }
       th { position: sticky; top: 0; background: #15203f; }
@@ -184,7 +230,7 @@ export function renderDashboard(rows: StateViewRow[]): string {
     </style>
   </head>
   <body>
-    <h1>FAMS Trade Readiness Board v2</h1>
+    <h1>FAMS Trade Readiness Board v2.1</h1>
     <div class="meta">Generated at ${esc(now.toISOString())} | Visible rows: <span id="visible-count">${rows.length}</span> / ${rows.length}</div>
 
     <div class="counts">
@@ -213,13 +259,14 @@ export function renderDashboard(rows: StateViewRow[]): string {
       </div>
     </div>
 
+    ${missingSection}
     ${hygienePanel}
 
     <div id="flat-view">
       <table>
         <thead>
           <tr>
-            <th>symbol</th>
+            <th>symbol_norm</th>
             <th>tf</th>
             <th>trade</th>
             <th>dir</th>
