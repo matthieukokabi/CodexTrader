@@ -10,10 +10,11 @@ import {
   decodeScenario,
   decodeSecondaryGateReason,
   decodeTrend,
-  deriveOperatingState,
   formatAge
 } from "./logic.js";
+import { deriveState, sortStateRows } from "./deriveState.js";
 import { renderDashboard } from "./dashboard.js";
+import type { LatestStateRow, StateViewRow } from "./types.js";
 
 const config = loadConfig();
 const db = new FamsDb(config.dbPath);
@@ -28,6 +29,54 @@ const webhookLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false
 });
+
+function toStateViewRow(row: LatestStateRow, now: Date): StateViewRow {
+  const derived = deriveState(row, now);
+  return {
+    symbol: row.symbol,
+    timeframe: row.timeframe,
+    timeframe_minutes: derived.timeframeMinutes,
+    market_type_code: row.fams_market_type,
+    market_type: decodeMarketType(row.fams_market_type),
+    final_scenario_code: row.fams_scenario_code,
+    final_scenario: decodeScenario(row.fams_scenario_code),
+    raw_scenario_code: row.fams_raw_scenario_code,
+    raw_scenario: decodeRawScenario(row.fams_raw_scenario_code),
+    operating_state: derived.operatingState,
+    direction: derived.direction,
+    readiness: derived.readiness,
+    gate_reason_code: row.fams_gate_reason_code,
+    gate_reason: decodeGateReason(row.fams_gate_reason_code),
+    secondary_gate_reason_code: row.fams_secondary_gate_reason_code,
+    secondary_gate_reason: decodeSecondaryGateReason(row.fams_secondary_gate_reason_code),
+    trend_state_code: row.fams_trend_state,
+    trend_state: decodeTrend(row.fams_trend_state),
+    htf_trend_state_code: row.fams_htf_trend_state,
+    htf_trend_state: decodeTrend(row.fams_htf_trend_state),
+    rvol: row.fams_rvol,
+    extension_score: row.fams_extension_score,
+    weak_participation: row.fams_weak_participation,
+    htf_conflict: row.fams_htf_conflict,
+    clean_interaction: row.fams_clean_interaction,
+    breakout_accepted: row.fams_breakout_accepted,
+    breakout_failure: row.fams_breakout_failure,
+    bar_confirmed: row.fams_bar_confirmed,
+    no_trade_gate: row.fams_no_trade_gate,
+    last_price: row.close,
+    bar_time_utc: row.bar_time_utc,
+    received_at_utc: row.received_at_utc,
+    age_ms: derived.ageMs,
+    age: formatAge(derived.ageMs),
+    stale: derived.stale,
+    state_priority: derived.statePriority,
+    unknown_hygiene: derived.unknownHygiene
+  };
+}
+
+function buildStateRows(now = new Date()): StateViewRow[] {
+  const mapped = db.getLatestState().map((row) => toStateViewRow(row, now));
+  return sortStateRows(mapped);
+}
 
 app.get("/healthz", (_req, res) => {
   res.status(200).json({ ok: true, service: "fams-dashboard", ts: new Date().toISOString() });
@@ -65,49 +114,12 @@ app.post("/api/webhook/tradingview/fams/:ingestKey", webhookLimiter, (req, res) 
 
 app.get("/api/state", (_req, res) => {
   const now = new Date();
-  const rows = db.getLatestState().map((row) => {
-    const derived = deriveOperatingState(row, now);
-    return {
-      symbol: row.symbol,
-      timeframe: row.timeframe,
-      market_type_code: row.fams_market_type,
-      market_type: decodeMarketType(row.fams_market_type),
-      final_scenario_code: row.fams_scenario_code,
-      final_scenario: decodeScenario(row.fams_scenario_code),
-      raw_scenario_code: row.fams_raw_scenario_code,
-      raw_scenario: decodeRawScenario(row.fams_raw_scenario_code),
-      operating_state: derived.operatingState,
-      gate_reason_code: row.fams_gate_reason_code,
-      gate_reason: decodeGateReason(row.fams_gate_reason_code),
-      secondary_gate_reason_code: row.fams_secondary_gate_reason_code,
-      secondary_gate_reason: decodeSecondaryGateReason(row.fams_secondary_gate_reason_code),
-      trend_state_code: row.fams_trend_state,
-      trend_state: decodeTrend(row.fams_trend_state),
-      htf_trend_state_code: row.fams_htf_trend_state,
-      htf_trend_state: decodeTrend(row.fams_htf_trend_state),
-      rvol: row.fams_rvol,
-      extension_score: row.fams_extension_score,
-      weak_participation: row.fams_weak_participation,
-      htf_conflict: row.fams_htf_conflict,
-      clean_interaction: row.fams_clean_interaction,
-      breakout_accepted: row.fams_breakout_accepted,
-      breakout_failure: row.fams_breakout_failure,
-      bar_confirmed: row.fams_bar_confirmed,
-      no_trade_gate: row.fams_no_trade_gate,
-      last_price: row.close,
-      bar_time_utc: row.bar_time_utc,
-      received_at_utc: row.received_at_utc,
-      age_ms: derived.ageMs,
-      age: formatAge(derived.ageMs),
-      stale: derived.stale
-    };
-  });
-
+  const rows = buildStateRows(now);
   return res.status(200).json({ ok: true, count: rows.length, rows, generated_at_utc: now.toISOString() });
 });
 
 app.get("/dashboard", (_req, res) => {
-  const rows = db.getLatestState();
+  const rows = buildStateRows(new Date());
   res.status(200).type("html").send(renderDashboard(rows));
 });
 

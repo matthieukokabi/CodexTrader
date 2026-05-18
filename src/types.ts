@@ -40,3 +40,47 @@ export type OperatingState =
   | "STRUCTURAL_READY_WATCH"
   | "NO_TRADE_STILL"
   | "STALE_DATA";
+
+export type Direction = "LONG" | "SHORT" | "UNKNOWN";
+
+export type Readiness = "READY" | "FORMING" | "WATCH" | "NO_TRADE" | "STALE";
+
+export interface StateViewRow {
+  symbol: string;
+  timeframe: string;
+  timeframe_minutes: number | null;
+  market_type_code: number;
+  market_type: string;
+  final_scenario_code: number;
+  final_scenario: string;
+  raw_scenario_code: number;
+  raw_scenario: string;
+  operating_state: OperatingState;
+  direction: Direction;
+  readiness: Readiness;
+  gate_reason_code: number;
+  gate_reason: string;
+  secondary_gate_reason_code: number;
+  secondary_gate_reason: string;
+  trend_state_code: number;
+  trend_state: string;
+  htf_trend_state_code: number;
+  htf_trend_state: string;
+  rvol: number;
+  extension_score: number;
+  weak_participation: number;
+  htf_conflict: number;
+  clean_interaction: number;
+  breakout_accepted: number;
+  breakout_failure: number;
+  bar_confirmed: number;
+  no_trade_gate: number;
+  last_price: number;
+  bar_time_utc: string;
+  received_at_utc: string;
+  age_ms: number;
+  age: string;
+  stale: boolean;
+  state_priority: number;
+  unknown_hygiene: boolean;
+}

@@ -1,12 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { deriveOperatingState } from "../logic.js";
+import { deriveState } from "../deriveState.js";
 import type { LatestStateRow } from "../types.js";
 
 function baseRow(): LatestStateRow {
   return {
     schema_version: "fams.v1",
-    indicator_version: "FAMS v0.3.4 Lite",
+    indicator_version: "FAMS v0.3.7 Lite",
     exchange: "CME_DL",
     symbol: "CME_MINI_DL:NQ1!",
     timeframe: "15",
@@ -37,8 +37,9 @@ function baseRow(): LatestStateRow {
 test("returns FINAL_SCENARIO_ACTIVE for active final scenario", () => {
   const row = baseRow();
   row.fams_scenario_code = 1;
-  const out = deriveOperatingState(row, new Date("2026-05-14T10:05:05Z"));
+  const out = deriveState(row, new Date("2026-05-14T10:05:05Z"));
   assert.equal(out.operatingState, "FINAL_SCENARIO_ACTIVE");
+  assert.equal(out.readiness, "READY");
 });
 
 test("returns RAW_SETUP_FORMING when raw active and blocked only by bar confirmation", () => {
@@ -47,21 +48,30 @@ test("returns RAW_SETUP_FORMING when raw active and blocked only by bar confirma
   row.fams_scenario_code = 4;
   row.fams_gate_reason_code = 1;
   row.fams_secondary_gate_reason_code = 0;
-  const out = deriveOperatingState(row, new Date("2026-05-14T10:10:05Z"));
+  const out = deriveState(row, new Date("2026-05-14T10:10:05Z"));
   assert.equal(out.operatingState, "RAW_SETUP_FORMING");
+  assert.equal(out.direction, "LONG");
 });
 
 test("returns STRUCTURAL_READY_WATCH when structural blocker exists", () => {
   const row = baseRow();
   row.fams_raw_scenario_code = 1;
   row.fams_secondary_gate_reason_code = 4;
-  const out = deriveOperatingState(row, new Date("2026-05-14T10:10:05Z"));
+  const out = deriveState(row, new Date("2026-05-14T10:10:05Z"));
   assert.equal(out.operatingState, "STRUCTURAL_READY_WATCH");
 });
 
-test("returns STALE_DATA when age exceeds threshold", () => {
+test("returns STALE_DATA when age exceeds threshold from bar_time_utc", () => {
   const row = baseRow();
-  const out = deriveOperatingState(row, new Date("2026-05-14T11:00:06Z"));
+  const out = deriveState(row, new Date("2026-05-14T10:46:01Z"));
   assert.equal(out.operatingState, "STALE_DATA");
   assert.equal(out.stale, true);
+});
+
+test("flags unknown hygiene when market type is unknown", () => {
+  const row = baseRow();
+  row.fams_market_type = 4;
+  const out = deriveState(row, new Date("2026-05-14T10:10:05Z"));
+  assert.equal(out.direction, "UNKNOWN");
+  assert.equal(out.unknownHygiene, true);
 });

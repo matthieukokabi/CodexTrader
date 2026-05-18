@@ -1,5 +1,3 @@
-import type { LatestStateRow, OperatingState } from "./types.js";
-
 const SCENARIO_MAP: Record<number, string> = {
   1: "BULLISH_CONTINUATION_ACTIVE",
   2: "BULLISH_PULLBACK_RETEST_ACTIVE",
@@ -44,51 +42,14 @@ const SECONDARY_GATE_MAP: Record<number, string> = {
   5: "COOLDOWN_BLOCKED"
 };
 
-function timeframeStaleMs(timeframe: string): number {
-  const tf = timeframe.toUpperCase();
-  if (tf === "15" || tf === "15M") return 45 * 60 * 1000;
-  if (tf === "60" || tf === "1H") return 135 * 60 * 1000;
-  if (tf === "240" || tf === "4H") return 9 * 60 * 60 * 1000;
-  if (tf === "D" || tf === "1D" || tf === "1440") return 36 * 60 * 60 * 1000;
-  return 24 * 60 * 60 * 1000;
-}
-
-export function deriveOperatingState(row: LatestStateRow, now = new Date()): {
-  stale: boolean;
-  ageMs: number;
-  operatingState: OperatingState;
-} {
-  const received = Date.parse(row.received_at_utc);
-  const ageMs = Number.isNaN(received) ? Number.MAX_SAFE_INTEGER : Math.max(0, now.getTime() - received);
-  const stale = ageMs > timeframeStaleMs(row.timeframe);
-
-  if (stale) {
-    return { stale, ageMs, operatingState: "STALE_DATA" };
-  }
-
-  if ([1, 2, 3].includes(row.fams_scenario_code)) {
-    return { stale, ageMs, operatingState: "FINAL_SCENARIO_ACTIVE" };
-  }
-
-  if (
-    [1, 2, 3].includes(row.fams_raw_scenario_code) &&
-    row.fams_scenario_code === 4 &&
-    row.fams_gate_reason_code === 1 &&
-    row.fams_secondary_gate_reason_code === 0
-  ) {
-    return { stale, ageMs, operatingState: "RAW_SETUP_FORMING" };
-  }
-
-  if (
-    [1, 2, 3].includes(row.fams_raw_scenario_code) &&
-    row.fams_scenario_code === 4 &&
-    [2, 3, 4, 5].includes(row.fams_secondary_gate_reason_code)
-  ) {
-    return { stale, ageMs, operatingState: "STRUCTURAL_READY_WATCH" };
-  }
-
-  return { stale, ageMs, operatingState: "NO_TRADE_STILL" };
-}
+const GATE_REASON_SHORT_MAP: Record<number, string> = {
+  0: "NONE",
+  1: "BAR",
+  2: "HTF",
+  3: "EXT+WEAK",
+  4: "NO_STRUCT",
+  5: "COOLDOWN"
+};
 
 export function decodeScenario(code: number): string {
   return SCENARIO_MAP[code] || `UNKNOWN_${code}`;
@@ -112,6 +73,10 @@ export function decodeGateReason(code: number): string {
 
 export function decodeSecondaryGateReason(code: number): string {
   return SECONDARY_GATE_MAP[code] || `UNKNOWN_${code}`;
+}
+
+export function decodeGateReasonShort(code: number): string {
+  return GATE_REASON_SHORT_MAP[code] || `UNK_${code}`;
 }
 
 export function formatAge(ageMs: number): string {
