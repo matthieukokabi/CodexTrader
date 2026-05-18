@@ -104,3 +104,37 @@ export interface MissingExpectedPair {
   timeframe: string;
   key: string;
 }
+
+export type HtfAlignment = "ALIGNED" | "CONFLICT_OR_MIXED" | "NO_CANDIDATE";
+
+export interface ConfluenceCandidate {
+  symbol_norm: string;
+  timeframe: string;
+  timeframe_canonical: string;
+  timeframe_minutes: number | null;
+  trade_badge: TradeBadge;
+  operating_state: OperatingState;
+  confidence_score: number;
+  confidence_bucket: ConfidenceBucket;
+  trend_state: string;
+  htf_trend_state: string;
+  gate_reason: string;
+  secondary_gate_reason: string;
+  rvol: number;
+  extension_score: number;
+  weak_participation: number;
+  htf_conflict: number;
+  clean_interaction: number;
+}
+
+export interface ConfluenceRollup {
+  symbol_norm: string;
+  coverage_count: number;
+  missing_timeframes: string[];
+  unknown_hygiene: boolean;
+  htf_alignment: HtfAlignment;
+  conflict_reasons: string[];
+  best_long: ConfluenceCandidate | null;
+  best_short: ConfluenceCandidate | null;
+  sort_rank: number;
+}

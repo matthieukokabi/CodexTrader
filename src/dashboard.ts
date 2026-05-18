@@ -1,5 +1,5 @@
 import { decodeGateReasonShort } from "./logic.js";
-import type { MissingExpectedPair, StateViewRow } from "./types.js";
+import type { ConfluenceRollup, MissingExpectedPair, StateViewRow } from "./types.js";
 
 function esc(value: unknown): string {
   return String(value)
@@ -81,7 +81,77 @@ function renderMissingMatrix(missingExpectedPairs: MissingExpectedPair[]): strin
 </div>`;
 }
 
-export function renderDashboard(rows: StateViewRow[], missingExpectedPairs: MissingExpectedPair[]): string {
+function renderConfluenceCards(rollups: ConfluenceRollup[]): string {
+  if (rollups.length === 0) {
+    return `<div class="missing"><strong>Confluence</strong><div>No confluence rows available.</div></div>`;
+  }
+
+  return rollups
+    .map((rollup) => {
+      const bestLong = rollup.best_long;
+      const bestShort = rollup.best_short;
+      const longBadge = bestLong?.trade_badge ?? "NONE";
+      const shortBadge = bestShort?.trade_badge ?? "NONE";
+      const missingCount = rollup.missing_timeframes.length;
+      const reasons = rollup.conflict_reasons.join(", ");
+
+      return `<div class="confluence-card"
+  data-symbol-norm="${esc(rollup.symbol_norm)}"
+  data-best-long-badge="${esc(longBadge)}"
+  data-best-short-badge="${esc(shortBadge)}"
+  data-rank="${esc(rollup.sort_rank)}"
+  data-unknown="${rollup.unknown_hygiene ? "1" : "0"}">
+  <div class="symbol-card-head">
+    <span class="badge badge-navy">${esc(rollup.symbol_norm)}</span>
+    <span class="badge ${missingCount === 0 ? "badge-green" : "badge-orange"}">coverage ${rollup.coverage_count}/4</span>
+    <span class="badge ${missingCount === 0 ? "badge-green" : "badge-yellow"}">missing ${missingCount}</span>
+    ${rollup.unknown_hygiene ? '<span class="badge badge-unknown">HYGIENE WARN</span>' : '<span class="badge badge-green">HYGIENE OK</span>'}
+    <span class="badge ${rollup.htf_alignment === "ALIGNED" ? "badge-green" : rollup.htf_alignment === "NO_CANDIDATE" ? "badge-gray" : "badge-orange"}">HTF ${esc(rollup.htf_alignment)}</span>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>candidate</th>
+        <th>trade</th>
+        <th>tf</th>
+        <th>state</th>
+        <th>conf</th>
+        <th>trend/htf</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>best long</td>
+        <td><span class="badge ${tradeBadgeClass(longBadge)}">${esc(longBadge)}</span></td>
+        <td>${esc(bestLong?.timeframe_canonical ?? "-")}</td>
+        <td>${esc(bestLong?.operating_state ?? "-")}</td>
+        <td>${esc(bestLong ? `${bestLong.confidence_bucket} ${bestLong.confidence_score}` : "-")}</td>
+        <td>${esc(bestLong ? `${bestLong.trend_state}/${bestLong.htf_trend_state}` : "-")}</td>
+      </tr>
+      <tr>
+        <td>best short</td>
+        <td><span class="badge ${tradeBadgeClass(shortBadge)}">${esc(shortBadge)}</span></td>
+        <td>${esc(bestShort?.timeframe_canonical ?? "-")}</td>
+        <td>${esc(bestShort?.operating_state ?? "-")}</td>
+        <td>${esc(bestShort ? `${bestShort.confidence_bucket} ${bestShort.confidence_score}` : "-")}</td>
+        <td>${esc(bestShort ? `${bestShort.trend_state}/${bestShort.htf_trend_state}` : "-")}</td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="confluence-notes">
+    <div><strong>Conflict reason:</strong> ${esc(reasons)}</div>
+    <div><strong>Missing TFs:</strong> ${esc(rollup.missing_timeframes.join(", ") || "none")}</div>
+  </div>
+</div>`;
+    })
+    .join("\n");
+}
+
+export function renderDashboard(
+  rows: StateViewRow[],
+  missingExpectedPairs: MissingExpectedPair[],
+  confluenceRollups: ConfluenceRollup[]
+): string {
   const now = new Date();
   const unknownRows = rows.filter((row) => row.unknown_hygiene);
 
@@ -139,12 +209,13 @@ export function renderDashboard(rows: StateViewRow[], missingExpectedPairs: Miss
       : "";
 
   const missingSection = renderMissingMatrix(missingExpectedPairs);
+  const confluenceCards = renderConfluenceCards(confluenceRollups);
 
   return `<!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>FAMS Trade Readiness Board v2.1</title>
+    <title>FAMS Trade Readiness Board v3</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; margin: 16px; background: #0b1020; color: #f0f4ff; }
@@ -210,8 +281,8 @@ export function renderDashboard(rows: StateViewRow[], missingExpectedPairs: Miss
       .badge-conf-med { background: #3f3200; color: #ffec8a; border-color: #c6a200; }
       .badge-conf-low { background: #462626; color: #ffb0b0; border-color: #b55a5a; }
       .hidden { display: none; }
-      .collapsed-groups { display: grid; gap: 10px; }
-      .symbol-card {
+      .collapsed-groups, .confluence-cards { display: grid; gap: 10px; }
+      .symbol-card, .confluence-card {
         border: 1px solid #2f3b63;
         border-radius: 10px;
         padding: 10px;
@@ -224,14 +295,15 @@ export function renderDashboard(rows: StateViewRow[], missingExpectedPairs: Miss
         flex-wrap: wrap;
         margin-bottom: 8px;
       }
-      .symbol-card table { font-size: 11px; }
-      .symbol-card th, .symbol-card td { padding: 4px 6px; }
+      .symbol-card table, .confluence-card table { font-size: 11px; }
+      .symbol-card th, .symbol-card td, .confluence-card th, .confluence-card td { padding: 4px 6px; }
+      .confluence-notes { margin-top: 8px; color: #b5c6ef; font-size: 12px; }
       code { color: #cddcff; }
     </style>
   </head>
   <body>
-    <h1>FAMS Trade Readiness Board v2.1</h1>
-    <div class="meta">Generated at ${esc(now.toISOString())} | Visible rows: <span id="visible-count">${rows.length}</span> / ${rows.length}</div>
+    <h1>FAMS Trade Readiness Board v3</h1>
+    <div class="meta">Generated at ${esc(now.toISOString())} | Visible items: <span id="visible-count">${rows.length}</span></div>
 
     <div class="counts">
       <span class="badge badge-green">FINAL_SCENARIO_ACTIVE: ${counts.FINAL_SCENARIO_ACTIVE || 0}</span>
@@ -253,6 +325,7 @@ export function renderDashboard(rows: StateViewRow[], missingExpectedPairs: Miss
       <div class="view-toggle">
         <button class="view-btn active" data-view="flat">Flat</button>
         <button class="view-btn" data-view="collapsed">Collapsed</button>
+        <button class="view-btn" data-view="confluence">Confluence</button>
       </div>
       <div class="search-wrap">
         <input id="symbol-search" type="text" placeholder="Search symbol..." />
@@ -292,6 +365,12 @@ export function renderDashboard(rows: StateViewRow[], missingExpectedPairs: Miss
       <div id="collapsed-groups" class="collapsed-groups"></div>
     </div>
 
+    <div id="confluence-view" class="hidden">
+      <div id="confluence-cards" class="confluence-cards">
+        ${confluenceCards}
+      </div>
+    </div>
+
     <script>
       (function () {
         const filterButtons = Array.from(document.querySelectorAll(".filter-btn"));
@@ -300,8 +379,10 @@ export function renderDashboard(rows: StateViewRow[], missingExpectedPairs: Miss
         const visibleCount = document.getElementById("visible-count");
         const flatView = document.getElementById("flat-view");
         const collapsedView = document.getElementById("collapsed-view");
+        const confluenceView = document.getElementById("confluence-view");
         const collapsedGroups = document.getElementById("collapsed-groups");
         const rows = Array.from(document.querySelectorAll(".board-row"));
+        const confluenceCards = Array.from(document.querySelectorAll(".confluence-card"));
 
         let activeFilter = "all";
         let activeView = "flat";
@@ -317,12 +398,34 @@ export function renderDashboard(rows: StateViewRow[], missingExpectedPairs: Miss
           return true;
         }
 
+        function matchesConfluenceFilter(card, filter) {
+          const longBadge = card.dataset.bestLongBadge || "";
+          const shortBadge = card.dataset.bestShortBadge || "";
+          const rank = Number(card.dataset.rank || "99");
+          const unknown = card.dataset.unknown === "1";
+
+          if (filter === "all") return true;
+          if (filter === "long") return longBadge === "LONG READY";
+          if (filter === "short") return shortBadge === "SHORT READY";
+          if (filter === "watch") return longBadge === "WATCH" || shortBadge === "WATCH" || rank === 3;
+          if (filter === "stale") return longBadge === "STALE" || shortBadge === "STALE" || rank === 4;
+          if (filter === "unknown") return unknown || rank === 5;
+          return true;
+        }
+
         function matchesSearch(row, query) {
           if (!query) return true;
           const q = query.toLowerCase();
           const symbol = (row.dataset.symbol || "").toLowerCase();
           const symbolNorm = (row.dataset.symbolNorm || "").toLowerCase();
           return symbol.includes(q) || symbolNorm.includes(q);
+        }
+
+        function matchesConfluenceSearch(card, query) {
+          if (!query) return true;
+          const q = query.toLowerCase();
+          const symbolNorm = (card.dataset.symbolNorm || "").toLowerCase();
+          return symbolNorm.includes(q);
         }
 
         function timeframeRank(tf, tfMin) {
@@ -458,14 +561,22 @@ export function renderDashboard(rows: StateViewRow[], missingExpectedPairs: Miss
           const filteredRows = rows.filter(function (row) {
             return matchesFilter(row, activeFilter) && matchesSearch(row, query);
           });
+          const filteredCards = confluenceCards.filter(function (card) {
+            return matchesConfluenceFilter(card, activeFilter) && matchesConfluenceSearch(card, query);
+          });
 
           rows.forEach(function (row) {
             const show = filteredRows.includes(row);
             row.style.display = activeView === "flat" && show ? "" : "none";
           });
 
+          confluenceCards.forEach(function (card) {
+            const show = filteredCards.includes(card);
+            card.style.display = activeView === "confluence" && show ? "" : "none";
+          });
+
           if (visibleCount) {
-            visibleCount.textContent = String(filteredRows.length);
+            visibleCount.textContent = String(activeView === "confluence" ? filteredCards.length : filteredRows.length);
           }
 
           if (activeView === "collapsed") {
@@ -486,14 +597,10 @@ export function renderDashboard(rows: StateViewRow[], missingExpectedPairs: Miss
             activeView = btn.dataset.view || "flat";
             setActiveButtons(viewButtons, "view", activeView);
 
-            if (flatView && collapsedView) {
-              if (activeView === "flat") {
-                flatView.classList.remove("hidden");
-                collapsedView.classList.add("hidden");
-              } else {
-                flatView.classList.add("hidden");
-                collapsedView.classList.remove("hidden");
-              }
+            if (flatView && collapsedView && confluenceView) {
+              flatView.classList.toggle("hidden", activeView !== "flat");
+              collapsedView.classList.toggle("hidden", activeView !== "collapsed");
+              confluenceView.classList.toggle("hidden", activeView !== "confluence");
             }
 
             apply();

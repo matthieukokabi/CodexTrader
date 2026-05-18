@@ -4,10 +4,9 @@ import { loadConfig } from "./config.js";
 import {
   buildExpectedPairKey,
   EXPECTED_SYMBOL_NORMS,
-  EXPECTED_TIMEFRAMES,
-  normalizeSymbolNormForMatch,
-  normalizeTimeframeForMatch
+  EXPECTED_TIMEFRAMES
 } from "./config/whitelist.js";
+import { buildConfluenceRollups } from "./confluence.js";
 import { FamsDb } from "./db.js";
 import { parsePayload } from "./validation.js";
 import {
@@ -21,7 +20,7 @@ import {
 } from "./logic.js";
 import { deriveState, sortStateRows } from "./deriveState.js";
 import { renderDashboard } from "./dashboard.js";
-import type { LatestStateRow, MissingExpectedPair, StateViewRow } from "./types.js";
+import type { ConfluenceRollup, LatestStateRow, MissingExpectedPair, StateViewRow } from "./types.js";
 
 const config = loadConfig();
 const db = new FamsDb(config.dbPath);
@@ -92,6 +91,7 @@ interface StateBundle {
   missingExpectedPairs: MissingExpectedPair[];
   expectedPairCount: number;
   observedExpectedPairCount: number;
+  confluenceRollups: ConfluenceRollup[];
 }
 
 const EXPECTED_MATRIX: MissingExpectedPair[] = EXPECTED_SYMBOL_NORMS.flatMap((symbolNorm) =>
@@ -166,12 +166,14 @@ function buildStateBundle(now = new Date()): StateBundle {
   );
 
   const missingExpectedPairs = EXPECTED_MATRIX.filter((pair) => !observedExpectedKeys.has(pair.key));
+  const confluenceRollups = buildConfluenceRollups(rows);
 
   return {
     rows,
     missingExpectedPairs,
     expectedPairCount: EXPECTED_MATRIX.length,
-    observedExpectedPairCount: observedExpectedKeys.size
+    observedExpectedPairCount: observedExpectedKeys.size,
+    confluenceRollups
   };
 }
 
@@ -245,6 +247,18 @@ app.get("/api/state", (_req, res) => {
   });
 });
 
+app.get("/api/confluence.json", (_req, res) => {
+  const now = new Date();
+  const bundle = buildStateBundle(now);
+
+  return res.status(200).json({
+    ok: true,
+    count: bundle.confluenceRollups.length,
+    rows: bundle.confluenceRollups,
+    generated_at_utc: now.toISOString()
+  });
+});
+
 app.get("/api/state.csv", (_req, res) => {
   const bundle = buildStateBundle(new Date());
   const csv = toCsv(bundle.rows);
@@ -253,7 +267,10 @@ app.get("/api/state.csv", (_req, res) => {
 
 app.get("/dashboard", (_req, res) => {
   const bundle = buildStateBundle(new Date());
-  res.status(200).type("html").send(renderDashboard(bundle.rows, bundle.missingExpectedPairs));
+  res
+    .status(200)
+    .type("html")
+    .send(renderDashboard(bundle.rows, bundle.missingExpectedPairs, bundle.confluenceRollups));
 });
 
 const server = app.listen(config.port, config.host, () => {
