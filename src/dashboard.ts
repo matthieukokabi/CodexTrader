@@ -25,6 +25,15 @@ function stateClass(state: string): string {
   return "badge-gray";
 }
 
+function stateLabel(state: string): string {
+  if (state === "FINAL_SCENARIO_ACTIVE") return "READY";
+  if (state === "RAW_SETUP_FORMING") return "FORMING";
+  if (state === "STRUCTURAL_READY_WATCH") return "WATCH";
+  if (state === "NO_TRADE_STILL") return "NO TRADE";
+  if (state === "STALE_DATA") return "STALE";
+  return state;
+}
+
 function trendClass(trend: string): string {
   if (trend === "BULLISH") return "badge-green";
   if (trend === "BEARISH") return "badge-red";
@@ -207,6 +216,47 @@ function renderActionabilitySnapshot(rows: StateViewRow[]): string {
 </div>`;
 }
 
+function renderReadinessBanner(rows: StateViewRow[], boardHealth: BoardHealthSummary): string {
+  const readyRows = rows.filter((row) => row.trade_badge === "LONG READY" || row.trade_badge === "SHORT READY");
+  const watchRows = rows.filter((row) => row.trade_badge === "WATCH");
+  const staleRows = rows.filter((row) => row.trade_badge === "STALE");
+  const unknownRows = rows.filter((row) => row.trade_badge === "UNKNOWN");
+  const noTradeRows = rows.filter((row) => row.trade_badge === "NO_TRADE");
+
+  if (readyRows.length > 0) {
+    return `<div class="widget readiness-banner readiness-banner-ok">
+  <strong>Ready trades available:</strong> ${readyRows.length} row(s) are currently actionable.
+</div>`;
+  }
+
+  const blockerCounts = new Map<string, number>();
+  rows.forEach((row) => {
+    const reason = row.secondary_gate_reason !== "NONE" ? row.secondary_gate_reason : row.gate_reason;
+    blockerCounts.set(reason, (blockerCounts.get(reason) || 0) + 1);
+  });
+
+  const topBlockers = Array.from(blockerCounts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([reason, count]) => `<li><span class="badge badge-navy">${esc(reason)}</span> ${count}</li>`)
+    .join("");
+
+  return `<div class="widget readiness-banner readiness-banner-warn">
+  <strong>No READY trades right now.</strong>
+  <div class="readiness-details">
+    <span class="badge badge-watch">WATCH: ${watchRows.length}</span>
+    <span class="badge badge-no-trade">NO_TRADE: ${noTradeRows.length}</span>
+    <span class="badge badge-red">STALE: ${staleRows.length}</span>
+    <span class="badge badge-unknown">UNKNOWN: ${unknownRows.length}</span>
+    <span class="badge badge-orange">Missing pairs: ${boardHealth.missing_symbol_timeframe_count}</span>
+  </div>
+  <div class="readiness-next-step">
+    <strong>Why nothing is tradable:</strong>
+    <ul>${topBlockers || "<li><span class='badge badge-gray'>NONE</span></li>"}</ul>
+  </div>
+</div>`;
+}
+
 function renderEmptyStateMessage(): string {
   return `<div id="empty-state" class="widget empty-state hidden" aria-live="polite"></div>`;
 }
@@ -272,7 +322,7 @@ function renderBoardHealth(summary: BoardHealthSummary): string {
     <div><span class="k">Symbols with candidates</span><span class="v">${summary.symbols_with_candidates_count}</span></div>
   </div>
   <div class="action-required">
-    <strong>Action required (top 5)</strong>
+    <strong>Data hygiene gaps (top 5)</strong>
     <ul>
       ${actionItems || "<li>None</li>"}
     </ul>
@@ -439,6 +489,36 @@ export function renderDashboard(
     return acc;
   }, {});
 
+  const filterCounts = {
+    all: rows.length,
+    ready: (tradeCounts["LONG READY"] || 0) + (tradeCounts["SHORT READY"] || 0),
+    long: tradeCounts["LONG READY"] || 0,
+    short: tradeCounts["SHORT READY"] || 0,
+    actionable: (tradeCounts["LONG READY"] || 0) + (tradeCounts["SHORT READY"] || 0) + (tradeCounts.WATCH || 0),
+    forming: counts.RAW_SETUP_FORMING || 0,
+    watch: tradeCounts.WATCH || 0,
+    highConf: rows.filter((row) => row.confidence_score >= 70).length,
+    stale: tradeCounts.STALE || 0,
+    unknown: tradeCounts.UNKNOWN || 0,
+    cleanOnly: rows.filter((row) => !row.unknown_hygiene).length,
+    biasLong: rows.filter((row) => row.direction_bias === "LONG").length,
+    biasShort: rows.filter((row) => row.direction_bias === "SHORT").length,
+    biasMixed: rows.filter((row) => row.direction_bias === "MIXED").length
+  };
+
+  const readinessBanner = renderReadinessBanner(rows, boardHealth);
+
+  const unknownHygieneBanner =
+    boardHealth.unknown_hygiene_symbol_count > 0
+      ? `<div class="widget readiness-banner readiness-banner-warn">
+  <strong>Board data incomplete:</strong> ${boardHealth.unknown_hygiene_symbol_count} symbol(s) are flagged UNKNOWN hygiene.
+  <div class="readiness-details">
+    <span class="badge badge-unknown">Unknown hygiene symbols: ${boardHealth.unknown_hygiene_symbol_count}</span>
+    <span class="badge badge-orange">Missing symbol/timeframe pairs: ${boardHealth.missing_symbol_timeframe_count}</span>
+  </div>
+</div>`
+      : "";
+
   const flatRows = rows
     .map((row) => {
       return `<tr class="board-row"
@@ -476,8 +556,8 @@ export function renderDashboard(
 
   const hygienePanel =
     unknownRows.length > 0
-      ? `<div class="hygiene">
-  <strong>Symbol Hygiene Warning</strong>
+      ? `<details class="hygiene">
+  <summary><strong>Symbol Hygiene Warning</strong> (${unknownRows.length} rows)</summary>
   <div>Rows flagged when symbol is outside whitelist, market type is UNKNOWN, or direction is UNKNOWN.</div>
   <ul>
     ${unknownRows
@@ -488,7 +568,7 @@ export function renderDashboard(
       )
       .join("\n")}
   </ul>
-</div>`
+</details>`
       : "";
 
   const missingSection = renderMissingMatrix(missingExpectedPairs);
@@ -566,6 +646,11 @@ export function renderDashboard(
       .empty-state h3 { margin: 0 0 6px; font-size: 14px; }
       .empty-state p { margin: 4px 0; }
       .empty-state ul { margin: 8px 0 0; padding-left: 18px; }
+      .readiness-banner { border-color: #4a5a8f; }
+      .readiness-banner-ok { border-color: #2f8f57; background: #0f2a1a; color: #b7f4d0; }
+      .readiness-banner-warn { border-color: #a46b13; background: #2a2200; color: #ffe7a8; }
+      .readiness-details { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+      .readiness-next-step ul { margin: 8px 0 0; padding-left: 18px; }
       .missing { border-color: #4a5a8f; background: #141d36; color: #d0dcff; }
       .widget-grid { display: grid; gap: 6px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-top: 8px; }
       .widget-grid .k { display: block; color: #9fb2e6; font-size: 11px; }
@@ -665,12 +750,15 @@ export function renderDashboard(
       now.toISOString()
     )} | <strong>Visible items:</strong> <span id="visible-count">${rows.length}</span></div>
 
+    ${readinessBanner}
+    ${unknownHygieneBanner}
+
     <div class="counts">
-      <span class="badge badge-green">FINAL_SCENARIO_ACTIVE: ${counts.FINAL_SCENARIO_ACTIVE || 0}</span>
-      <span class="badge badge-yellow">RAW_SETUP_FORMING: ${counts.RAW_SETUP_FORMING || 0}</span>
-      <span class="badge badge-orange">STRUCTURAL_READY_WATCH: ${counts.STRUCTURAL_READY_WATCH || 0}</span>
-      <span class="badge badge-gray">NO_TRADE_STILL: ${counts.NO_TRADE_STILL || 0}</span>
-      <span class="badge badge-red">STALE_DATA: ${counts.STALE_DATA || 0}</span>
+      <span class="badge badge-green" title="FINAL_SCENARIO_ACTIVE">${stateLabel("FINAL_SCENARIO_ACTIVE")}: ${counts.FINAL_SCENARIO_ACTIVE || 0}</span>
+      <span class="badge badge-yellow" title="RAW_SETUP_FORMING">${stateLabel("RAW_SETUP_FORMING")}: ${counts.RAW_SETUP_FORMING || 0}</span>
+      <span class="badge badge-orange" title="STRUCTURAL_READY_WATCH">${stateLabel("STRUCTURAL_READY_WATCH")}: ${counts.STRUCTURAL_READY_WATCH || 0}</span>
+      <span class="badge badge-gray" title="NO_TRADE_STILL">${stateLabel("NO_TRADE_STILL")}: ${counts.NO_TRADE_STILL || 0}</span>
+      <span class="badge badge-red" title="STALE_DATA">${stateLabel("STALE_DATA")}: ${counts.STALE_DATA || 0}</span>
       <span class="badge badge-long">LONG READY: ${tradeCounts["LONG READY"] || 0}</span>
       <span class="badge badge-short">SHORT READY: ${tradeCounts["SHORT READY"] || 0}</span>
       <span class="badge badge-watch">WATCH: ${tradeCounts.WATCH || 0}</span>
@@ -686,20 +774,20 @@ export function renderDashboard(
 
     <div class="toolbar">
       <div class="filters">
-        <button class="filter-btn active" data-filter="all">All</button>
-        <button class="filter-btn" data-filter="ready">Ready (Long+Short)</button>
-        <button class="filter-btn" data-filter="long">Long Ready</button>
-        <button class="filter-btn" data-filter="short">Short Ready</button>
-        <button class="filter-btn" data-filter="actionable">Actionable</button>
-        <button class="filter-btn" data-filter="forming">Forming</button>
-        <button class="filter-btn" data-filter="watch">Watch</button>
-        <button class="filter-btn" data-filter="high-conf">High Conf</button>
-        <button class="filter-btn" data-filter="stale">Stale</button>
-        <button class="filter-btn" data-filter="unknown">Unknown</button>
-        <button class="filter-btn" data-filter="clean-only">Clean Only</button>
-        <button class="filter-btn" data-filter="bias-long">Bias Long</button>
-        <button class="filter-btn" data-filter="bias-short">Bias Short</button>
-        <button class="filter-btn" data-filter="bias-mixed">Bias Mixed</button>
+        <button class="filter-btn active" data-filter="all">All (${filterCounts.all})</button>
+        <button class="filter-btn" data-filter="ready">Ready (${filterCounts.ready})</button>
+        <button class="filter-btn" data-filter="long">Long Ready (${filterCounts.long})</button>
+        <button class="filter-btn" data-filter="short">Short Ready (${filterCounts.short})</button>
+        <button class="filter-btn" data-filter="actionable">Actionable (${filterCounts.actionable})</button>
+        <button class="filter-btn" data-filter="forming">Forming (${filterCounts.forming})</button>
+        <button class="filter-btn" data-filter="watch">Watch (${filterCounts.watch})</button>
+        <button class="filter-btn" data-filter="high-conf">High Conf (${filterCounts.highConf})</button>
+        <button class="filter-btn" data-filter="stale">Stale (${filterCounts.stale})</button>
+        <button class="filter-btn" data-filter="unknown">Unknown (${filterCounts.unknown})</button>
+        <button class="filter-btn" data-filter="clean-only">Clean Only (${filterCounts.cleanOnly})</button>
+        <button class="filter-btn" data-filter="bias-long">Bias Long (${filterCounts.biasLong})</button>
+        <button class="filter-btn" data-filter="bias-short">Bias Short (${filterCounts.biasShort})</button>
+        <button class="filter-btn" data-filter="bias-mixed">Bias Mixed (${filterCounts.biasMixed})</button>
       </div>
       <div class="sort-wrap">
         <label for="sort-mode">Sort</label>
