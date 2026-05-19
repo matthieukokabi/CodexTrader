@@ -66,6 +66,104 @@ function candidateStatusClass(status: CandidateStatus): string {
   return "badge-gray";
 }
 
+function topRowsByBadge(rows: StateViewRow[], tradeBadge: string, limit = 5): StateViewRow[] {
+  return rows
+    .filter((row) => row.trade_badge === tradeBadge)
+    .sort((a, b) => {
+      if (a.confidence_score !== b.confidence_score) return b.confidence_score - a.confidence_score;
+      if (a.state_priority !== b.state_priority) return a.state_priority - b.state_priority;
+      return a.age_ms - b.age_ms;
+    })
+    .slice(0, limit);
+}
+
+function topWatchRows(rows: StateViewRow[], limit = 5): StateViewRow[] {
+  return rows
+    .filter((row) => row.trade_badge === "WATCH")
+    .sort((a, b) => {
+      if (a.confidence_score !== b.confidence_score) return b.confidence_score - a.confidence_score;
+      if (a.state_priority !== b.state_priority) return a.state_priority - b.state_priority;
+      return a.age_ms - b.age_ms;
+    })
+    .slice(0, limit);
+}
+
+function renderRadarList(rows: StateViewRow[]): string {
+  if (rows.length === 0) {
+    return `<li><span class="badge badge-gray">none</span></li>`;
+  }
+
+  return rows
+    .map(
+      (row) => `<li><strong>${esc(row.symbol_norm)}</strong> <span class="badge badge-navy">${esc(
+        row.timeframe_canonical
+      )}</span> <span class="badge ${tradeBadgeClass(row.trade_badge)}">${esc(row.trade_badge)}</span> <span class="badge ${scenarioDirectionClass(
+        row.direction
+      )}">DIR ${esc(row.direction)}</span> <span class="badge ${directionBiasClass(row.direction_bias)}">BIAS ${esc(
+        row.direction_bias
+      )}</span> <span class="badge ${confidenceClass(row.confidence_bucket)}">${esc(row.confidence_bucket)} ${esc(
+        row.confidence_score
+      )}</span> <span class="badge badge-gray">gate ${esc(decodeGateReasonShort(row.gate_reason_code))}</span> <span class="badge badge-gray">age ${esc(
+        row.age
+      )}</span></li>`
+    )
+    .join("\n");
+}
+
+function renderTradeRadar(rows: StateViewRow[]): string {
+  const longReady = topRowsByBadge(rows, "LONG READY");
+  const shortReady = topRowsByBadge(rows, "SHORT READY");
+  const watchList = topWatchRows(rows);
+  const highConfidence = rows
+    .filter((row) => row.confidence_score >= 70)
+    .sort((a, b) => {
+      if (a.trade_badge !== b.trade_badge) {
+        const rank = (badge: string) =>
+          badge === "LONG READY" || badge === "SHORT READY" ? 1 : badge === "WATCH" ? 2 : badge === "NO_TRADE" ? 3 : badge === "STALE" ? 4 : 5;
+        return rank(a.trade_badge) - rank(b.trade_badge);
+      }
+      if (a.confidence_score !== b.confidence_score) return b.confidence_score - a.confidence_score;
+      return a.age_ms - b.age_ms;
+    })
+    .slice(0, 5);
+
+  return `<div class="widget radar">
+  <strong>Trade Radar (Top Decision Rows)</strong>
+  <div class="widget-grid radar-grid">
+    <div>
+      <span class="k">Long Ready</span>
+      <ol class="radar-list">${renderRadarList(longReady)}</ol>
+    </div>
+    <div>
+      <span class="k">Short Ready</span>
+      <ol class="radar-list">${renderRadarList(shortReady)}</ol>
+    </div>
+    <div>
+      <span class="k">Watch (Best Forming/Structural)</span>
+      <ol class="radar-list">${renderRadarList(watchList)}</ol>
+    </div>
+    <div>
+      <span class="k">High Confidence (>= 70)</span>
+      <ol class="radar-list">${renderRadarList(highConfidence)}</ol>
+    </div>
+  </div>
+</div>`;
+}
+
+function renderFieldGuide(): string {
+  return `<details class="widget legend">
+  <summary><strong>Field Guide</strong> - quick meaning of key signals</summary>
+  <div class="legend-grid">
+    <div><span class="k">Trade</span><span class="v">Final actionability from scenario + hygiene + staleness.</span></div>
+    <div><span class="k">DIR</span><span class="v">Scenario-based direction only (LONG/SHORT/UNKNOWN).</span></div>
+    <div><span class="k">BIAS</span><span class="v">Trend-based bias from Trend and HTF Trend agreement.</span></div>
+    <div><span class="k">State</span><span class="v">Pipeline stage: FINAL active, RAW forming, STRUCTURAL watch, NO trade, or STALE.</span></div>
+    <div><span class="k">Gate</span><span class="v">Primary blocker code that explains why a setup is held back.</span></div>
+    <div><span class="k">Confidence</span><span class="v">0-100 score bucketed as LOW/MEDIUM/HIGH for prioritization.</span></div>
+  </div>
+</details>`;
+}
+
 function renderMissingMatrix(missingExpectedPairs: MissingExpectedPair[]): string {
   if (missingExpectedPairs.length === 0) {
     return `<div class="missing"><strong>Missing expected symbols/timeframes</strong><div>None. Expected matrix is complete.</div></div>`;
@@ -148,6 +246,9 @@ function renderConfluenceCards(rollups: ConfluenceRollup[]): string {
       const shortBadge = bestShort?.trade_badge ?? "NONE";
       const missingCount = rollup.missing_timeframes.length;
       const reasons = rollup.conflict_reasons.join(", ");
+      const bestConfidence = Math.max(bestLong?.confidence_score ?? -1, bestShort?.confidence_score ?? -1);
+      const hasForming =
+        bestLong?.operating_state === "RAW_SETUP_FORMING" || bestShort?.operating_state === "RAW_SETUP_FORMING" ? "1" : "0";
 
       const scenarioDirection = bestLong && bestShort ? "MIXED" : bestLong ? "LONG" : bestShort ? "SHORT" : "UNKNOWN";
 
@@ -157,7 +258,9 @@ function renderConfluenceCards(rollups: ConfluenceRollup[]): string {
   data-best-short-badge="${esc(shortBadge)}"
   data-rank="${esc(rollup.sort_rank)}"
   data-unknown="${rollup.unknown_hygiene ? "1" : "0"}"
-  data-direction-bias="${esc(rollup.direction_bias)}">
+  data-direction-bias="${esc(rollup.direction_bias)}"
+  data-best-confidence="${esc(bestConfidence)}"
+  data-has-forming="${hasForming}">
   <div class="symbol-card-head">
     <span class="badge badge-navy">${esc(rollup.symbol_norm)}</span>
     <span class="badge ${directionBiasClass(rollup.direction_bias)}">BIAS ${esc(rollup.direction_bias)}</span>
@@ -284,6 +387,11 @@ export function renderDashboard(
     return acc;
   }, {});
 
+  const tradeCounts = rows.reduce<Record<string, number>>((acc, row) => {
+    acc[row.trade_badge] = (acc[row.trade_badge] || 0) + 1;
+    return acc;
+  }, {});
+
   const flatRows = rows
     .map((row) => {
       return `<tr class="board-row"
@@ -291,6 +399,7 @@ export function renderDashboard(
   data-symbol-norm="${esc(row.symbol_norm)}"
   data-timeframe="${esc(row.timeframe)}"
   data-timeframe-minutes="${esc(row.timeframe_minutes ?? "")}" 
+  data-bar-time-utc="${esc(row.bar_time_utc)}"
   data-trade-badge="${esc(row.trade_badge)}"
   data-confidence-score="${esc(row.confidence_score)}"
   data-confidence-bucket="${esc(row.confidence_bucket)}"
@@ -339,18 +448,31 @@ export function renderDashboard(
   const confluenceCards = renderConfluenceCards(confluenceRollups);
   const boardHealthWidget = renderBoardHealth(boardHealth);
   const checklistWidget = renderChecklistTable(symbolChecklist);
+  const radarWidget = renderTradeRadar(rows);
+  const fieldGuide = renderFieldGuide();
 
   return `<!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>FAMS Trade Readiness Board v3.1</title>
+    <title>FAMS Trade Readiness Board v3.2 UX</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; margin: 16px; background: #0b1020; color: #f0f4ff; }
       h1 { font-size: 20px; margin: 0 0 10px 0; }
       .meta { margin-bottom: 12px; color: #9fb2e6; }
+      .meta strong { color: #f0f4ff; }
       .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+      .sort-wrap { display: flex; align-items: center; gap: 6px; }
+      .sort-wrap label { font-size: 12px; color: #9fb2e6; }
+      .sort-wrap select {
+        background: #1a264d;
+        color: #dbe8ff;
+        border: 1px solid #2f3b63;
+        border-radius: 8px;
+        padding: 6px 10px;
+        font-size: 12px;
+      }
       .filters { display: flex; flex-wrap: wrap; gap: 8px; }
       .view-toggle { display: flex; gap: 8px; }
       .search-wrap { margin-left: auto; min-width: 240px; }
@@ -387,6 +509,10 @@ export function renderDashboard(
       .widget-grid { display: grid; gap: 6px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-top: 8px; }
       .widget-grid .k { display: block; color: #9fb2e6; font-size: 11px; }
       .widget-grid .v { display: block; font-size: 13px; }
+      .radar-list { margin: 6px 0 0; padding-left: 18px; }
+      .radar-list li { margin: 4px 0; line-height: 1.45; }
+      .legend summary { cursor: pointer; }
+      .legend-grid { display: grid; gap: 6px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-top: 8px; }
       .action-required { margin-top: 10px; }
       .action-required ul { margin: 6px 0 0; padding-left: 18px; }
       .checklist-head { display: flex; gap: 10px; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
@@ -405,6 +531,10 @@ export function renderDashboard(
       th, td { border: 1px solid #2f3b63; padding: 6px; text-align: left; white-space: nowrap; }
       th { position: sticky; top: 0; background: #15203f; }
       tr:nth-child(even) { background: #111a34; }
+      .table-wrap { overflow: auto; border: 1px solid #2f3b63; border-radius: 8px; }
+      .board-row[data-trade-badge="LONG READY"] { box-shadow: inset 3px 0 0 #35a06b; }
+      .board-row[data-trade-badge="SHORT READY"] { box-shadow: inset 3px 0 0 #3e7cc1; }
+      .board-row[data-trade-badge="WATCH"] { box-shadow: inset 3px 0 0 #c46720; }
       .badge {
         display: inline-block;
         border-radius: 999px;
@@ -446,11 +576,12 @@ export function renderDashboard(
       .symbol-card th, .symbol-card td, .confluence-card th, .confluence-card td { padding: 4px 6px; }
       .confluence-notes { margin-top: 8px; color: #b5c6ef; font-size: 12px; }
       code { color: #cddcff; }
+      :focus-visible { outline: 2px solid #7fa3ff; outline-offset: 2px; }
     </style>
   </head>
   <body>
-    <h1>FAMS Trade Readiness Board v3.1</h1>
-    <div class="meta">Generated at ${esc(now.toISOString())} | Visible items: <span id="visible-count">${rows.length}</span></div>
+    <h1>FAMS Trade Readiness Board v3.2 UX</h1>
+    <div class="meta"><strong>Generated:</strong> ${esc(now.toISOString())} | <strong>Visible items:</strong> <span id="visible-count">${rows.length}</span></div>
 
     <div class="counts">
       <span class="badge badge-green">FINAL_SCENARIO_ACTIVE: ${counts.FINAL_SCENARIO_ACTIVE || 0}</span>
@@ -458,22 +589,41 @@ export function renderDashboard(
       <span class="badge badge-orange">STRUCTURAL_READY_WATCH: ${counts.STRUCTURAL_READY_WATCH || 0}</span>
       <span class="badge badge-gray">NO_TRADE_STILL: ${counts.NO_TRADE_STILL || 0}</span>
       <span class="badge badge-red">STALE_DATA: ${counts.STALE_DATA || 0}</span>
+      <span class="badge badge-long">LONG READY: ${tradeCounts["LONG READY"] || 0}</span>
+      <span class="badge badge-short">SHORT READY: ${tradeCounts["SHORT READY"] || 0}</span>
+      <span class="badge badge-watch">WATCH: ${tradeCounts.WATCH || 0}</span>
+      <span class="badge badge-no-trade">NO_TRADE: ${tradeCounts.NO_TRADE || 0}</span>
+      <span class="badge badge-unknown">UNKNOWN: ${tradeCounts.UNKNOWN || 0}</span>
     </div>
 
+    ${radarWidget}
+    ${fieldGuide}
     ${boardHealthWidget}
     ${checklistWidget}
 
     <div class="toolbar">
       <div class="filters">
         <button class="filter-btn active" data-filter="all">All</button>
+        <button class="filter-btn" data-filter="ready">Ready (Long+Short)</button>
         <button class="filter-btn" data-filter="long">Long Ready</button>
         <button class="filter-btn" data-filter="short">Short Ready</button>
+        <button class="filter-btn" data-filter="forming">Forming</button>
         <button class="filter-btn" data-filter="watch">Watch</button>
+        <button class="filter-btn" data-filter="high-conf">High Conf</button>
         <button class="filter-btn" data-filter="stale">Stale</button>
         <button class="filter-btn" data-filter="unknown">Unknown</button>
         <button class="filter-btn" data-filter="bias-long">Bias Long</button>
         <button class="filter-btn" data-filter="bias-short">Bias Short</button>
         <button class="filter-btn" data-filter="bias-mixed">Bias Mixed</button>
+      </div>
+      <div class="sort-wrap">
+        <label for="sort-mode">Sort</label>
+        <select id="sort-mode" aria-label="Sort board rows">
+          <option value="default" selected>State priority</option>
+          <option value="confidence">Confidence high to low</option>
+          <option value="age">Freshness (newest first)</option>
+          <option value="symbol">Symbol A-Z</option>
+        </select>
       </div>
       <div class="view-toggle">
         <button class="view-btn active" data-view="flat">Flat</button>
@@ -489,30 +639,32 @@ export function renderDashboard(
     ${hygienePanel}
 
     <div id="flat-view">
+      <div class="table-wrap">
       <table>
         <thead>
           <tr>
-            <th>symbol_norm</th>
-            <th>tf</th>
-            <th>trade</th>
-            <th>dir</th>
-            <th>bias</th>
-            <th>state</th>
-            <th>gate</th>
-            <th>trend</th>
-            <th>htf</th>
-            <th>confidence</th>
-            <th>rvol</th>
-            <th>extension</th>
-            <th>age</th>
-            <th>last_update</th>
-            <th>hygiene</th>
+            <th title="Canonical exchange:symbol key">symbol_norm</th>
+            <th title="Canonical timeframe">tf</th>
+            <th title="Final decision badge">trade</th>
+            <th title="Scenario-derived direction">dir</th>
+            <th title="Trend/HTF bias">bias</th>
+            <th title="Operating state in the decision pipeline">state</th>
+            <th title="Primary gate/block reason">gate</th>
+            <th title="Current trend state">trend</th>
+            <th title="Higher-timeframe trend state">htf</th>
+            <th title="Confidence bucket and score">confidence</th>
+            <th title="Relative volume">rvol</th>
+            <th title="Extension score">extension</th>
+            <th title="Age since bar time">age</th>
+            <th title="Last webhook ingestion timestamp">last_update</th>
+            <th title="Symbol whitelist and hygiene status">hygiene</th>
           </tr>
         </thead>
         <tbody id="board-body">
           ${flatRows}
         </tbody>
       </table>
+      </div>
     </div>
 
     <div id="collapsed-view" class="hidden">
@@ -530,6 +682,7 @@ export function renderDashboard(
         const filterButtons = Array.from(document.querySelectorAll(".filter-btn"));
         const viewButtons = Array.from(document.querySelectorAll(".view-btn"));
         const searchInput = document.getElementById("symbol-search");
+        const sortModeSelect = document.getElementById("sort-mode");
         const visibleCount = document.getElementById("visible-count");
         const flatView = document.getElementById("flat-view");
         const collapsedView = document.getElementById("collapsed-view");
@@ -545,15 +698,21 @@ export function renderDashboard(
         let activeFilter = "all";
         let activeView = "flat";
         let activeChecklistFilter = "all";
+        let activeSort = "default";
 
         function matchesFilter(row, filter) {
           const badge = row.dataset.tradeBadge || "";
           const bias = row.dataset.directionBias || "MIXED";
+          const state = row.dataset.operatingState || "";
+          const conf = Number(row.dataset.confidenceScore || "0");
 
           if (filter === "all") return true;
+          if (filter === "ready") return badge === "LONG READY" || badge === "SHORT READY";
           if (filter === "long") return badge === "LONG READY";
           if (filter === "short") return badge === "SHORT READY";
+          if (filter === "forming") return state === "RAW_SETUP_FORMING";
           if (filter === "watch") return badge === "WATCH";
+          if (filter === "high-conf") return conf >= 70;
           if (filter === "stale") return badge === "STALE";
           if (filter === "unknown") return badge === "UNKNOWN";
           if (filter === "bias-long") return bias === "LONG";
@@ -568,11 +727,16 @@ export function renderDashboard(
           const rank = Number(card.dataset.rank || "99");
           const unknown = card.dataset.unknown === "1";
           const bias = card.dataset.directionBias || "MIXED";
+          const bestConfidence = Number(card.dataset.bestConfidence || "-1");
+          const hasForming = card.dataset.hasForming === "1";
 
           if (filter === "all") return true;
+          if (filter === "ready") return longBadge === "LONG READY" || shortBadge === "SHORT READY";
           if (filter === "long") return longBadge === "LONG READY";
           if (filter === "short") return shortBadge === "SHORT READY";
+          if (filter === "forming") return hasForming;
           if (filter === "watch") return longBadge === "WATCH" || shortBadge === "WATCH" || rank === 3;
+          if (filter === "high-conf") return bestConfidence >= 70;
           if (filter === "stale") return longBadge === "STALE" || shortBadge === "STALE" || rank === 4;
           if (filter === "unknown") return unknown || rank === 7;
           if (filter === "bias-long") return bias === "LONG";
@@ -768,18 +932,78 @@ export function renderDashboard(
           });
         }
 
+        function sortRowsForView(inputRows) {
+          const sorted = inputRows.slice();
+
+          if (activeSort === "confidence") {
+            sorted.sort(function (a, b) {
+              const ac = Number(a.dataset.confidenceScore || "0");
+              const bc = Number(b.dataset.confidenceScore || "0");
+              if (ac !== bc) return bc - ac;
+              const ap = Number(a.dataset.statePriority || "99");
+              const bp = Number(b.dataset.statePriority || "99");
+              if (ap !== bp) return ap - bp;
+              return (a.dataset.symbolNorm || "").localeCompare(b.dataset.symbolNorm || "", "en", { sensitivity: "base" });
+            });
+            return sorted;
+          }
+
+          if (activeSort === "age") {
+            sorted.sort(function (a, b) {
+              const at = Date.parse(a.dataset.barTimeUtc || "");
+              const bt = Date.parse(b.dataset.barTimeUtc || "");
+              const an = Number.isNaN(at) ? Number.NEGATIVE_INFINITY : at;
+              const bn = Number.isNaN(bt) ? Number.NEGATIVE_INFINITY : bt;
+              return bn - an;
+            });
+            return sorted;
+          }
+
+          if (activeSort === "symbol") {
+            sorted.sort(function (a, b) {
+              const as = a.dataset.symbolNorm || "";
+              const bs = b.dataset.symbolNorm || "";
+              const sc = as.localeCompare(bs, "en", { sensitivity: "base" });
+              if (sc !== 0) return sc;
+              return timeframeRank(a.dataset.timeframe, a.dataset.timeframeMinutes) - timeframeRank(b.dataset.timeframe, b.dataset.timeframeMinutes);
+            });
+            return sorted;
+          }
+
+          sorted.sort(function (a, b) {
+            const ap = Number(a.dataset.statePriority || "99");
+            const bp = Number(b.dataset.statePriority || "99");
+            if (ap !== bp) return ap - bp;
+            const as = a.dataset.symbolNorm || "";
+            const bs = b.dataset.symbolNorm || "";
+            const sc = as.localeCompare(bs, "en", { sensitivity: "base" });
+            if (sc !== 0) return sc;
+            return timeframeRank(a.dataset.timeframe, a.dataset.timeframeMinutes) - timeframeRank(b.dataset.timeframe, b.dataset.timeframeMinutes);
+          });
+
+          return sorted;
+        }
+
         function applyMain() {
           const query = searchInput ? String(searchInput.value || "") : "";
           const filteredRows = rows.filter(function (row) {
             return matchesFilter(row, activeFilter) && matchesSearch(row, query);
           });
+          const sortedRows = sortRowsForView(filteredRows);
           const filteredCards = confluenceCards.filter(function (card) {
             return matchesConfluenceFilter(card, activeFilter) && matchesConfluenceSearch(card, query);
           });
 
+          const boardBody = document.getElementById("board-body");
           rows.forEach(function (row) {
-            const show = filteredRows.includes(row);
-            row.style.display = activeView === "flat" && show ? "" : "none";
+            row.style.display = "none";
+          });
+
+          if (activeView === "flat" && boardBody) {
+            sortedRows.forEach(function (row) {
+              boardBody.appendChild(row);
+              row.style.display = "";
+            });
           });
 
           confluenceCards.forEach(function (card) {
@@ -788,11 +1012,11 @@ export function renderDashboard(
           });
 
           if (visibleCount) {
-            visibleCount.textContent = String(activeView === "confluence" ? filteredCards.length : filteredRows.length);
+            visibleCount.textContent = String(activeView === "confluence" ? filteredCards.length : sortedRows.length);
           }
 
           if (activeView === "collapsed") {
-            renderCollapsed(filteredRows);
+            renderCollapsed(sortedRows);
           }
         }
 
@@ -829,6 +1053,13 @@ export function renderDashboard(
 
         if (searchInput) {
           searchInput.addEventListener("input", function () {
+            applyMain();
+          });
+        }
+
+        if (sortModeSelect) {
+          sortModeSelect.addEventListener("change", function () {
+            activeSort = String(sortModeSelect.value || "default");
             applyMain();
           });
         }
