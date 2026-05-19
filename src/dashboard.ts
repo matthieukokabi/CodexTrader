@@ -261,6 +261,32 @@ function renderEmptyStateMessage(): string {
   return `<div id="empty-state" class="widget empty-state hidden" aria-live="polite"></div>`;
 }
 
+function renderWhyBlockedCell(row: StateViewRow): string {
+  const isReady = row.trade_badge === "LONG READY" || row.trade_badge === "SHORT READY";
+  if (isReady) {
+    return `<span class="badge badge-green">READY</span>`;
+  }
+
+  const primary = decodeGateReasonShort(row.gate_reason_code);
+  const secondary = decodeGateReasonShort(row.secondary_gate_reason_code);
+
+  const checklist = [
+    `Primary gate: ${primary}`,
+    `Secondary gate: ${secondary}`,
+    `Bar confirmed: ${row.bar_confirmed ? "YES" : "NO"}`,
+    `HTF conflict: ${row.htf_conflict ? "YES" : "NO"}`,
+    `Weak participation: ${row.weak_participation ? "YES" : "NO"}`,
+    `Clean interaction: ${row.clean_interaction ? "YES" : "NO"}`,
+    `Breakout accepted: ${row.breakout_accepted ? "YES" : "NO"}`,
+    `Breakout failure: ${row.breakout_failure ? "YES" : "NO"}`
+  ];
+
+  return `<details class="why-blocked">
+  <summary><span class="badge badge-navy">Why blocked</span></summary>
+  <ul>${checklist.map((line) => `<li>${esc(line)}</li>`).join("")}</ul>
+</details>`;
+}
+
 function renderMissingMatrix(missingExpectedPairs: MissingExpectedPair[]): string {
   if (missingExpectedPairs.length === 0) {
     return `<div class="missing"><strong>Missing expected symbols/timeframes</strong><div>None. Expected matrix is complete.</div></div>`;
@@ -542,6 +568,7 @@ export function renderDashboard(
 <td><span class="badge ${directionBiasClass(row.direction_bias)}">${esc(row.direction_bias)}</span></td>
 <td><span class="badge ${stateClass(row.operating_state)}">${esc(row.operating_state)}</span></td>
 <td><span class="badge badge-navy">${esc(decodeGateReasonShort(row.gate_reason_code))}</span></td>
+<td>${renderWhyBlockedCell(row)}</td>
 <td><span class="badge ${trendClass(row.trend_state)}">${esc(row.trend_state)}</span></td>
 <td><span class="badge ${trendClass(row.htf_trend_state)}">${esc(row.htf_trend_state)}</span></td>
 <td><span class="badge ${confidenceClass(row.confidence_bucket)}">${esc(row.confidence_bucket)} ${esc(row.confidence_score)}</span></td>
@@ -740,6 +767,10 @@ export function renderDashboard(
       .symbol-card table, .confluence-card table { font-size: 11px; }
       .symbol-card th, .symbol-card td, .confluence-card th, .confluence-card td { padding: 4px 6px; }
       .confluence-notes { margin-top: 8px; color: #b5c6ef; font-size: 12px; }
+      .why-blocked summary { cursor: pointer; list-style: none; }
+      .why-blocked summary::-webkit-details-marker { display: none; }
+      .why-blocked ul { margin: 6px 0 0; padding-left: 16px; color: #c6d6ff; }
+      .why-blocked li { margin: 2px 0; }
       code { color: #cddcff; }
       :focus-visible { outline: 2px solid #7fa3ff; outline-offset: 2px; }
     </style>
@@ -824,6 +855,7 @@ export function renderDashboard(
             <th title="Trend/HTF bias">trend bias</th>
             <th title="Operating state in the decision pipeline">pipeline state</th>
             <th title="Primary gate/block reason">blocker</th>
+            <th title="Expanded explanation of gate/participation/structure blockers">why blocked</th>
             <th title="Current trend state">trend</th>
             <th title="Higher-timeframe trend state">htf trend</th>
             <th title="Confidence bucket and score">confidence score</th>
@@ -1124,7 +1156,7 @@ export function renderDashboard(
               .map(function (row) {
                 const trade = row.dataset.tradeBadge || "NO_TRADE";
                 const bucket = row.dataset.confidenceBucket || "LOW";
-                const ageText = row.children[12] ? row.children[12].textContent : "";
+                const ageText = row.children[13] ? row.children[13].textContent : "";
                 return '<tr>' +
                   '<td>' + (row.dataset.timeframe || "") + '</td>' +
                   '<td><span class="badge ' + tradeClass(trade) + '">' + trade + '</span></td>' +
