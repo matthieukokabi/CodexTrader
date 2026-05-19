@@ -164,6 +164,49 @@ function renderFieldGuide(): string {
 </details>`;
 }
 
+function renderActionabilitySnapshot(rows: StateViewRow[]): string {
+  const readyRows = rows.filter((row) => row.trade_badge === "LONG READY" || row.trade_badge === "SHORT READY");
+  const watchRows = rows.filter((row) => row.trade_badge === "WATCH");
+  const staleRows = rows.filter((row) => row.trade_badge === "STALE");
+  const unknownRows = rows.filter((row) => row.trade_badge === "UNKNOWN");
+  const cleanRows = rows.filter((row) => !row.unknown_hygiene);
+
+  const blockerCounts = new Map<string, number>();
+  rows
+    .filter((row) => row.trade_badge !== "LONG READY" && row.trade_badge !== "SHORT READY")
+    .forEach((row) => {
+      const reason = row.secondary_gate_reason !== "NONE" ? row.secondary_gate_reason : row.gate_reason;
+      blockerCounts.set(reason, (blockerCounts.get(reason) || 0) + 1);
+    });
+
+  const blockerSummary = Array.from(blockerCounts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([reason, count]) => `<li><span class="badge badge-navy">${esc(reason)}</span> <strong>${count}</strong></li>`)
+    .join("\n");
+
+  const readyHeadline =
+    readyRows.length > 0
+      ? `<span class="badge badge-green">Ready now: ${readyRows.length}</span>`
+      : `<span class="badge badge-red">No ready trades right now</span>`;
+
+  return `<div class="widget snapshot">
+  <strong>Actionability Snapshot</strong>
+  <div class="snapshot-top">${readyHeadline}</div>
+  <div class="widget-grid snapshot-grid">
+    <div><span class="k">Rows total</span><span class="v">${rows.length}</span></div>
+    <div><span class="k">Ready / Watch</span><span class="v">${readyRows.length} / ${watchRows.length}</span></div>
+    <div><span class="k">Unknown hygiene</span><span class="v">${unknownRows.length}</span></div>
+    <div><span class="k">Clean rows</span><span class="v">${cleanRows.length}</span></div>
+    <div><span class="k">Stale rows</span><span class="v">${staleRows.length}</span></div>
+  </div>
+  <div class="snapshot-blockers">
+    <span class="k">Top blockers (non-ready rows)</span>
+    <ul>${blockerSummary || "<li><span class='badge badge-gray'>none</span></li>"}</ul>
+  </div>
+</div>`;
+}
+
 function renderMissingMatrix(missingExpectedPairs: MissingExpectedPair[]): string {
   if (missingExpectedPairs.length === 0) {
     return `<div class="missing"><strong>Missing expected symbols/timeframes</strong><div>None. Expected matrix is complete.</div></div>`;
@@ -448,6 +491,7 @@ export function renderDashboard(
   const confluenceCards = renderConfluenceCards(confluenceRollups);
   const boardHealthWidget = renderBoardHealth(boardHealth);
   const checklistWidget = renderChecklistTable(symbolChecklist);
+  const snapshotWidget = renderActionabilitySnapshot(rows);
   const radarWidget = renderTradeRadar(rows);
   const fieldGuide = renderFieldGuide();
 
@@ -455,7 +499,7 @@ export function renderDashboard(
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>FAMS Trade Readiness Board v3.2 UX</title>
+    <title>FAMS Trade Readiness Board v3.3 UX</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; margin: 16px; background: #0b1020; color: #f0f4ff; }
@@ -513,6 +557,9 @@ export function renderDashboard(
       .radar-list li { margin: 4px 0; line-height: 1.45; }
       .legend summary { cursor: pointer; }
       .legend-grid { display: grid; gap: 6px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-top: 8px; }
+      .snapshot-top { margin: 8px 0; }
+      .snapshot-blockers ul { margin: 8px 0 0; padding-left: 18px; }
+      .snapshot-blockers li { margin: 4px 0; }
       .action-required { margin-top: 10px; }
       .action-required ul { margin: 6px 0 0; padding-left: 18px; }
       .checklist-head { display: flex; gap: 10px; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
@@ -580,7 +627,7 @@ export function renderDashboard(
     </style>
   </head>
   <body>
-    <h1>FAMS Trade Readiness Board v3.2 UX</h1>
+    <h1>FAMS Trade Readiness Board v3.3 UX</h1>
     <div class="meta"><strong>Generated:</strong> ${esc(now.toISOString())} | <strong>Visible items:</strong> <span id="visible-count">${rows.length}</span></div>
 
     <div class="counts">
@@ -596,6 +643,7 @@ export function renderDashboard(
       <span class="badge badge-unknown">UNKNOWN: ${tradeCounts.UNKNOWN || 0}</span>
     </div>
 
+    ${snapshotWidget}
     ${radarWidget}
     ${fieldGuide}
     ${boardHealthWidget}
@@ -607,11 +655,13 @@ export function renderDashboard(
         <button class="filter-btn" data-filter="ready">Ready (Long+Short)</button>
         <button class="filter-btn" data-filter="long">Long Ready</button>
         <button class="filter-btn" data-filter="short">Short Ready</button>
+        <button class="filter-btn" data-filter="actionable">Actionable</button>
         <button class="filter-btn" data-filter="forming">Forming</button>
         <button class="filter-btn" data-filter="watch">Watch</button>
         <button class="filter-btn" data-filter="high-conf">High Conf</button>
         <button class="filter-btn" data-filter="stale">Stale</button>
         <button class="filter-btn" data-filter="unknown">Unknown</button>
+        <button class="filter-btn" data-filter="clean-only">Clean Only</button>
         <button class="filter-btn" data-filter="bias-long">Bias Long</button>
         <button class="filter-btn" data-filter="bias-short">Bias Short</button>
         <button class="filter-btn" data-filter="bias-mixed">Bias Mixed</button>
@@ -644,19 +694,19 @@ export function renderDashboard(
         <thead>
           <tr>
             <th title="Canonical exchange:symbol key">symbol_norm</th>
-            <th title="Canonical timeframe">tf</th>
-            <th title="Final decision badge">trade</th>
-            <th title="Scenario-derived direction">dir</th>
-            <th title="Trend/HTF bias">bias</th>
-            <th title="Operating state in the decision pipeline">state</th>
-            <th title="Primary gate/block reason">gate</th>
+            <th title="Canonical timeframe">timeframe</th>
+            <th title="Final decision badge">trade status</th>
+            <th title="Scenario-derived direction">scenario dir</th>
+            <th title="Trend/HTF bias">trend bias</th>
+            <th title="Operating state in the decision pipeline">pipeline state</th>
+            <th title="Primary gate/block reason">blocker</th>
             <th title="Current trend state">trend</th>
-            <th title="Higher-timeframe trend state">htf</th>
-            <th title="Confidence bucket and score">confidence</th>
+            <th title="Higher-timeframe trend state">htf trend</th>
+            <th title="Confidence bucket and score">confidence score</th>
             <th title="Relative volume">rvol</th>
             <th title="Extension score">extension</th>
             <th title="Age since bar time">age</th>
-            <th title="Last webhook ingestion timestamp">last_update</th>
+            <th title="Last webhook ingestion timestamp">last update</th>
             <th title="Symbol whitelist and hygiene status">hygiene</th>
           </tr>
         </thead>
@@ -698,23 +748,68 @@ export function renderDashboard(
         let activeFilter = "all";
         let activeView = "flat";
         let activeChecklistFilter = "all";
-        let activeSort = "default";
+        let activeSort = "confidence";
+
+        function inferDefaultFilter() {
+          const hasReady = rows.some(function (row) {
+            const badge = row.dataset.tradeBadge || "";
+            return badge === "LONG READY" || badge === "SHORT READY";
+          });
+          if (hasReady) return "ready";
+
+          const hasWatch = rows.some(function (row) {
+            return (row.dataset.tradeBadge || "") === "WATCH";
+          });
+          if (hasWatch) return "watch";
+
+          const hasUnknown = rows.some(function (row) {
+            return (row.dataset.tradeBadge || "") === "UNKNOWN";
+          });
+          if (hasUnknown) return "unknown";
+
+          return "all";
+        }
+
+        function safeGetPreference(key, fallback) {
+          try {
+            const value = window.localStorage.getItem(key);
+            return value || fallback;
+          } catch (_err) {
+            return fallback;
+          }
+        }
+
+        function safeSetPreference(key, value) {
+          try {
+            window.localStorage.setItem(key, value);
+          } catch (_err) {
+            // Ignore storage failures (private mode, quota, etc.)
+          }
+        }
+
+        const inferredFilter = inferDefaultFilter();
+        activeFilter = safeGetPreference("fams.activeFilter", inferredFilter);
+        activeView = safeGetPreference("fams.activeView", "flat");
+        activeSort = safeGetPreference("fams.activeSort", "confidence");
 
         function matchesFilter(row, filter) {
           const badge = row.dataset.tradeBadge || "";
           const bias = row.dataset.directionBias || "MIXED";
           const state = row.dataset.operatingState || "";
           const conf = Number(row.dataset.confidenceScore || "0");
+          const unknown = row.dataset.unknown === "1";
 
           if (filter === "all") return true;
           if (filter === "ready") return badge === "LONG READY" || badge === "SHORT READY";
           if (filter === "long") return badge === "LONG READY";
           if (filter === "short") return badge === "SHORT READY";
+          if (filter === "actionable") return badge === "LONG READY" || badge === "SHORT READY" || badge === "WATCH";
           if (filter === "forming") return state === "RAW_SETUP_FORMING";
           if (filter === "watch") return badge === "WATCH";
           if (filter === "high-conf") return conf >= 70;
           if (filter === "stale") return badge === "STALE";
           if (filter === "unknown") return badge === "UNKNOWN";
+          if (filter === "clean-only") return !unknown;
           if (filter === "bias-long") return bias === "LONG";
           if (filter === "bias-short") return bias === "SHORT";
           if (filter === "bias-mixed") return bias === "MIXED";
@@ -734,11 +829,13 @@ export function renderDashboard(
           if (filter === "ready") return longBadge === "LONG READY" || shortBadge === "SHORT READY";
           if (filter === "long") return longBadge === "LONG READY";
           if (filter === "short") return shortBadge === "SHORT READY";
+          if (filter === "actionable") return longBadge === "LONG READY" || shortBadge === "SHORT READY" || longBadge === "WATCH" || shortBadge === "WATCH" || rank === 3;
           if (filter === "forming") return hasForming;
           if (filter === "watch") return longBadge === "WATCH" || shortBadge === "WATCH" || rank === 3;
           if (filter === "high-conf") return bestConfidence >= 70;
           if (filter === "stale") return longBadge === "STALE" || shortBadge === "STALE" || rank === 4;
           if (filter === "unknown") return unknown || rank === 7;
+          if (filter === "clean-only") return !unknown;
           if (filter === "bias-long") return bias === "LONG";
           if (filter === "bias-short") return bias === "SHORT";
           if (filter === "bias-mixed") return bias === "MIXED";
@@ -1023,6 +1120,7 @@ export function renderDashboard(
         filterButtons.forEach(function (btn) {
           btn.addEventListener("click", function () {
             activeFilter = btn.dataset.filter || "all";
+            safeSetPreference("fams.activeFilter", activeFilter);
             setActiveButtons(filterButtons, "filter", activeFilter);
             applyMain();
           });
@@ -1031,6 +1129,7 @@ export function renderDashboard(
         viewButtons.forEach(function (btn) {
           btn.addEventListener("click", function () {
             activeView = btn.dataset.view || "flat";
+            safeSetPreference("fams.activeView", activeView);
             setActiveButtons(viewButtons, "view", activeView);
 
             if (flatView && collapsedView && confluenceView) {
@@ -1060,6 +1159,7 @@ export function renderDashboard(
         if (sortModeSelect) {
           sortModeSelect.addEventListener("change", function () {
             activeSort = String(sortModeSelect.value || "default");
+            safeSetPreference("fams.activeSort", activeSort);
             applyMain();
           });
         }
@@ -1068,6 +1168,18 @@ export function renderDashboard(
           checklistSearch.addEventListener("input", function () {
             applyChecklist();
           });
+        }
+
+        setActiveButtons(filterButtons, "filter", activeFilter);
+        setActiveButtons(viewButtons, "view", activeView);
+        if (sortModeSelect) {
+          sortModeSelect.value = activeSort;
+        }
+
+        if (flatView && collapsedView && confluenceView) {
+          flatView.classList.toggle("hidden", activeView !== "flat");
+          collapsedView.classList.toggle("hidden", activeView !== "collapsed");
+          confluenceView.classList.toggle("hidden", activeView !== "confluence");
         }
 
         applyMain();
