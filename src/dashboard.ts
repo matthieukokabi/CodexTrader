@@ -207,6 +207,10 @@ function renderActionabilitySnapshot(rows: StateViewRow[]): string {
 </div>`;
 }
 
+function renderEmptyStateMessage(): string {
+  return `<div id="empty-state" class="widget empty-state hidden" aria-live="polite"></div>`;
+}
+
 function renderMissingMatrix(missingExpectedPairs: MissingExpectedPair[]): string {
   if (missingExpectedPairs.length === 0) {
     return `<div class="missing"><strong>Missing expected symbols/timeframes</strong><div>None. Expected matrix is complete.</div></div>`;
@@ -494,18 +498,27 @@ export function renderDashboard(
   const snapshotWidget = renderActionabilitySnapshot(rows);
   const radarWidget = renderTradeRadar(rows);
   const fieldGuide = renderFieldGuide();
+  const emptyStateWidget = renderEmptyStateMessage();
 
   return `<!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>FAMS Trade Readiness Board v3.3 UX</title>
+    <title>FAMS Trade Readiness Board v3.4 UX</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; margin: 16px; background: #0b1020; color: #f0f4ff; }
       h1 { font-size: 20px; margin: 0 0 10px 0; }
-      .meta { margin-bottom: 12px; color: #9fb2e6; }
+      .meta { margin-bottom: 12px; color: #9fb2e6; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
       .meta strong { color: #f0f4ff; }
+      .meta .live-dot {
+        width: 8px;
+        height: 8px;
+        background: #35a06b;
+        border-radius: 999px;
+        display: inline-block;
+        box-shadow: 0 0 0 4px rgba(53, 160, 107, 0.2);
+      }
       .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
       .sort-wrap { display: flex; align-items: center; gap: 6px; }
       .sort-wrap label { font-size: 12px; color: #9fb2e6; }
@@ -549,6 +562,10 @@ export function renderDashboard(
         color: #ffd4a8;
       }
       .widget { border-color: #2f3b63; background: #101936; color: #dbe8ff; }
+      .empty-state { border-color: #7f5f12; background: #2a2200; color: #ffe7a8; }
+      .empty-state h3 { margin: 0 0 6px; font-size: 14px; }
+      .empty-state p { margin: 4px 0; }
+      .empty-state ul { margin: 8px 0 0; padding-left: 18px; }
       .missing { border-color: #4a5a8f; background: #141d36; color: #d0dcff; }
       .widget-grid { display: grid; gap: 6px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-top: 8px; }
       .widget-grid .k { display: block; color: #9fb2e6; font-size: 11px; }
@@ -579,6 +596,22 @@ export function renderDashboard(
       th { position: sticky; top: 0; background: #15203f; }
       tr:nth-child(even) { background: #111a34; }
       .table-wrap { overflow: auto; border: 1px solid #2f3b63; border-radius: 8px; }
+      #flat-view table th:first-child, #flat-view table td:first-child {
+        position: sticky;
+        left: 0;
+        z-index: 3;
+        background: #15203f;
+        min-width: 220px;
+      }
+      #flat-view table td:first-child { background: inherit; z-index: 2; }
+      #flat-view table th:nth-child(2), #flat-view table td:nth-child(2) {
+        position: sticky;
+        left: 220px;
+        z-index: 3;
+        background: #15203f;
+        min-width: 70px;
+      }
+      #flat-view table td:nth-child(2) { background: inherit; z-index: 2; }
       .board-row[data-trade-badge="LONG READY"] { box-shadow: inset 3px 0 0 #35a06b; }
       .board-row[data-trade-badge="SHORT READY"] { box-shadow: inset 3px 0 0 #3e7cc1; }
       .board-row[data-trade-badge="WATCH"] { box-shadow: inset 3px 0 0 #c46720; }
@@ -600,7 +633,7 @@ export function renderDashboard(
       .badge-watch { background: #4a2300; color: #ffbe87; border-color: #c46720; }
       .badge-no-trade { background: #262f4f; color: #c7d2f7; border-color: #4a5a8f; }
       .badge-stale { background: #471515; color: #ffaaaa; border-color: #b54a4a; }
-      .badge-unknown { background: #1a264d; color: #c7d2f7; border-color: #4a5a8f; }
+      .badge-unknown { background: #2d2152; color: #e0d4ff; border-color: #7f67cc; }
       .badge-conf-high { background: #153a24; color: #96f5be; border-color: #35a06b; font-weight: 700; }
       .badge-conf-med { background: #3f3200; color: #ffec8a; border-color: #c6a200; }
       .badge-conf-low { background: #462626; color: #ffb0b0; border-color: #b55a5a; }
@@ -627,8 +660,10 @@ export function renderDashboard(
     </style>
   </head>
   <body>
-    <h1>FAMS Trade Readiness Board v3.3 UX</h1>
-    <div class="meta"><strong>Generated:</strong> ${esc(now.toISOString())} | <strong>Visible items:</strong> <span id="visible-count">${rows.length}</span></div>
+    <h1>FAMS Trade Readiness Board v3.4 UX</h1>
+    <div class="meta"><span class="live-dot" aria-hidden="true"></span><strong>Live:</strong> refresh in <span id="refresh-countdown">60s</span> | <strong>Generated:</strong> ${esc(
+      now.toISOString()
+    )} | <strong>Visible items:</strong> <span id="visible-count">${rows.length}</span></div>
 
     <div class="counts">
       <span class="badge badge-green">FINAL_SCENARIO_ACTIVE: ${counts.FINAL_SCENARIO_ACTIVE || 0}</span>
@@ -685,6 +720,7 @@ export function renderDashboard(
       </div>
     </div>
 
+    ${emptyStateWidget}
     ${missingSection}
     ${hygienePanel}
 
@@ -908,11 +944,13 @@ export function renderDashboard(
 
         function setActiveButtons(buttons, key, value) {
           buttons.forEach(function (btn) {
-            if (btn.dataset[key] === value) {
+            const isActive = btn.dataset[key] === value;
+            if (isActive) {
               btn.classList.add("active");
             } else {
               btn.classList.remove("active");
             }
+            btn.setAttribute("aria-pressed", isActive ? "true" : "false");
           });
         }
 
@@ -1081,6 +1119,91 @@ export function renderDashboard(
           return sorted;
         }
 
+        function filterLabel(filter) {
+          if (filter === "ready") return "Ready (Long+Short)";
+          if (filter === "long") return "Long Ready";
+          if (filter === "short") return "Short Ready";
+          if (filter === "actionable") return "Actionable";
+          if (filter === "forming") return "Forming";
+          if (filter === "watch") return "Watch";
+          if (filter === "high-conf") return "High Confidence";
+          if (filter === "stale") return "Stale";
+          if (filter === "unknown") return "Unknown";
+          if (filter === "clean-only") return "Clean Only";
+          if (filter === "bias-long") return "Bias Long";
+          if (filter === "bias-short") return "Bias Short";
+          if (filter === "bias-mixed") return "Bias Mixed";
+          return "All";
+        }
+
+        function buildTopBlockers() {
+          const blocker = new Map();
+          rows.forEach(function (row) {
+            const trade = row.dataset.tradeBadge || "";
+            if (trade === "LONG READY" || trade === "SHORT READY") return;
+            const gateCell = row.children[6];
+            const gate = gateCell ? String(gateCell.textContent || "").trim() : "UNKNOWN_GATE";
+            blocker.set(gate, (blocker.get(gate) || 0) + 1);
+          });
+
+          return Array.from(blocker.entries())
+            .sort(function (a, b) { return b[1] - a[1]; })
+            .slice(0, 4);
+        }
+
+        function topRowsByConfidence(limit) {
+          return rows
+            .slice()
+            .sort(function (a, b) {
+              const ac = Number(a.dataset.confidenceScore || "0");
+              const bc = Number(b.dataset.confidenceScore || "0");
+              if (ac !== bc) return bc - ac;
+              const ap = Number(a.dataset.statePriority || "99");
+              const bp = Number(b.dataset.statePriority || "99");
+              return ap - bp;
+            })
+            .slice(0, limit);
+        }
+
+        function renderEmptyStateFor(modeLabel, filteredCount) {
+          const panel = document.getElementById("empty-state");
+          if (!panel) return;
+          if (filteredCount > 0) {
+            panel.classList.add("hidden");
+            panel.innerHTML = "";
+            return;
+          }
+
+          const unknownCount = rows.filter(function (row) { return row.dataset.unknown === "1"; }).length;
+          const staleCount = rows.filter(function (row) { return (row.dataset.tradeBadge || "") === "STALE"; }).length;
+          const noTradeCount = rows.filter(function (row) { return (row.dataset.operatingState || "") === "NO_TRADE_STILL"; }).length;
+          const blockers = buildTopBlockers();
+          const closest = topRowsByConfidence(3)
+            .map(function (row) {
+              const symbol = row.dataset.symbolNorm || "UNKNOWN";
+              const tf = row.dataset.timeframe || "-";
+              const conf = row.dataset.confidenceScore || "0";
+              const state = row.dataset.operatingState || "UNKNOWN";
+              return "<li><strong>" + symbol + "</strong> <span class=\"badge badge-navy\">" + tf + "</span> <span class=\"badge badge-gray\">" + state + "</span> <span class=\"badge badge-conf-med\">conf " + conf + "</span></li>";
+            })
+            .join("");
+
+          panel.classList.remove("hidden");
+          panel.innerHTML =
+            "<h3>No rows match " + modeLabel + " right now</h3>" +
+            "<p>Try <strong>All</strong>, <strong>Unknown</strong>, or <strong>Clean Only</strong> to inspect why signals are blocked.</p>" +
+            "<p><span class=\"badge badge-unknown\">Unknown hygiene: " + unknownCount + "</span> <span class=\"badge badge-red\">Stale: " + staleCount + "</span> <span class=\"badge badge-gray\">No-trade: " + noTradeCount + "</span></p>" +
+            "<p><strong>Top blockers:</strong></p><ul>" +
+            (blockers.length
+              ? blockers
+                  .map(function (entry) {
+                    return "<li><span class=\"badge badge-navy\">" + entry[0] + "</span> <strong>" + entry[1] + "</strong></li>";
+                  })
+                  .join("")
+              : "<li><span class=\"badge badge-gray\">none</span></li>") +
+            "</ul><p><strong>Closest rows by confidence:</strong></p><ul>" + closest + "</ul>";
+        }
+
         function applyMain() {
           const query = searchInput ? String(searchInput.value || "") : "";
           const filteredRows = rows.filter(function (row) {
@@ -1114,6 +1237,13 @@ export function renderDashboard(
 
           if (activeView === "collapsed") {
             renderCollapsed(sortedRows);
+          }
+
+          const label = filterLabel(activeFilter);
+          if (activeView === "confluence") {
+            renderEmptyStateFor(label + " (confluence)", filteredCards.length);
+          } else {
+            renderEmptyStateFor(label, sortedRows.length);
           }
         }
 
@@ -1180,6 +1310,19 @@ export function renderDashboard(
           flatView.classList.toggle("hidden", activeView !== "flat");
           collapsedView.classList.toggle("hidden", activeView !== "collapsed");
           confluenceView.classList.toggle("hidden", activeView !== "confluence");
+        }
+
+        const refreshCountdown = document.getElementById("refresh-countdown");
+        let refreshRemaining = 60;
+        if (refreshCountdown) {
+          window.setInterval(function () {
+            refreshRemaining -= 1;
+            if (refreshRemaining <= 0) {
+              window.location.reload();
+              return;
+            }
+            refreshCountdown.textContent = String(refreshRemaining) + "s";
+          }, 1000);
         }
 
         applyMain();

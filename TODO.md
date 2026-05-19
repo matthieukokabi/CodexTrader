@@ -11,5 +11,6 @@
 - [x] Ship Bias v3.1: trend-based direction_bias field, bias filters/badges, and bias-aware fallback sorting without changing scenario direction.
 - [x] Enhance dashboard UX v3.2: trade radar, field guide, readiness/confidence filters, and sort controls for faster decision scanning.
 - [x] Enhance dashboard UX v3.3: actionability snapshot, signal-first defaults, cleaner labels, and actionable/clean-only filters with persisted UI preferences.
+- [x] Enhance dashboard UX v3.4: empty-state blocker diagnostics, sticky key columns, distinct unknown badges, and live auto-refresh countdown.
 - [ ] Configure nginx + TLS + public subdomain (manual next step).
 - [ ] Create TradingView alerts and webhook wiring (manual next step).
