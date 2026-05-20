@@ -1043,15 +1043,17 @@ export function renderDashboard(
           });
           if (hasReady) return "ready";
 
-          const hasWatch = rows.some(function (row) {
-            return (row.dataset.tradeBadge || "") === "WATCH";
+          const hasActionable = rows.some(function (row) {
+            const badge = row.dataset.tradeBadge || "";
+            const state = row.dataset.operatingState || "";
+            return badge === "LONG READY" || badge === "SHORT READY" || badge === "WATCH" || state === "RAW_SETUP_FORMING";
           });
-          if (hasWatch) return "watch";
+          if (hasActionable) return "actionable";
 
-          const hasUnknown = rows.some(function (row) {
-            return (row.dataset.tradeBadge || "") === "UNKNOWN";
+          const hasCleanRows = rows.some(function (row) {
+            return row.dataset.unknown !== "1";
           });
-          if (hasUnknown) return "unknown";
+          if (hasCleanRows) return "clean-only";
 
           return "all";
         }
