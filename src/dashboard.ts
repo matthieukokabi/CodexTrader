@@ -75,6 +75,11 @@ function candidateStatusClass(status: CandidateStatus): string {
   return "badge-gray";
 }
 
+function rowDomId(row: StateViewRow): string {
+  const raw = `${row.symbol_norm}-${row.timeframe_canonical}`.toLowerCase();
+  return `row-${raw.replaceAll(/[^a-z0-9_-]+/g, "-").replaceAll(/-+/g, "-").replaceAll(/^-|-$/g, "")}`;
+}
+
 function topRowsByBadge(rows: StateViewRow[], tradeBadge: string, limit = 5): StateViewRow[] {
   return rows
     .filter((row) => row.trade_badge === tradeBadge)
@@ -156,6 +161,53 @@ function renderTradeRadar(rows: StateViewRow[]): string {
       <ol class="radar-list">${renderRadarList(highConfidence)}</ol>
     </div>
   </div>
+</div>`;
+}
+
+function renderTopCandidatesStrip(rows: StateViewRow[]): string {
+  const tradeRank = (badge: string): number => {
+    if (badge === "LONG READY" || badge === "SHORT READY") return 1;
+    if (badge === "WATCH") return 2;
+    if (badge === "NO_TRADE") return 3;
+    if (badge === "STALE") return 4;
+    return 5;
+  };
+
+  const topCandidates = rows
+    .slice()
+    .sort((a, b) => {
+      const ar = tradeRank(a.trade_badge);
+      const br = tradeRank(b.trade_badge);
+      if (ar !== br) return ar - br;
+      if (a.confidence_score !== b.confidence_score) return b.confidence_score - a.confidence_score;
+      return a.age_ms - b.age_ms;
+    })
+    .slice(0, 5);
+
+  const items =
+    topCandidates.length > 0
+      ? topCandidates
+          .map((row, index) => {
+            const rowId = rowDomId(row);
+            return `<li class="candidate-item">
+  <span class="candidate-rank">#${index + 1}</span>
+  <span class="candidate-symbol"><strong>${esc(row.symbol_norm)}</strong></span>
+  <span class="badge badge-navy">${esc(row.timeframe_canonical)}</span>
+  <span class="badge ${tradeBadgeClass(row.trade_badge)}">${esc(row.trade_badge)}</span>
+  <span class="badge ${scenarioDirectionClass(row.direction)}">${esc(row.direction)}</span>
+  <span class="badge ${directionBiasClass(row.direction_bias)}">BIAS ${esc(row.direction_bias)}</span>
+  <span class="badge ${confidenceClass(row.confidence_bucket)}" title="Confidence score">${esc(row.confidence_score)}</span>
+  <button class="candidate-jump" type="button" data-target-id="${esc(rowId)}" aria-label="Jump to ${esc(
+              row.symbol_norm
+            )} ${esc(row.timeframe_canonical)} row">Jump</button>
+</li>`;
+          })
+          .join("\n")
+      : `<li><span class="badge badge-gray">No candidate rows available yet</span></li>`;
+
+  return `<div class="widget top-candidates" aria-label="Top candidate strip">
+  <strong>Top 5 candidates now</strong>
+  <ol class="candidate-list">${items}</ol>
 </div>`;
 }
 
@@ -547,7 +599,9 @@ export function renderDashboard(
 
   const flatRows = rows
     .map((row) => {
+      const domRowId = rowDomId(row);
       return `<tr class="board-row"
+  id="${esc(domRowId)}"
   data-symbol="${esc(row.symbol)}"
   data-symbol-norm="${esc(row.symbol_norm)}"
   data-timeframe="${esc(row.timeframe)}"
@@ -604,6 +658,7 @@ export function renderDashboard(
   const checklistWidget = renderChecklistTable(symbolChecklist);
   const snapshotWidget = renderActionabilitySnapshot(rows);
   const radarWidget = renderTradeRadar(rows);
+  const topCandidatesWidget = renderTopCandidatesStrip(rows);
   const fieldGuide = renderFieldGuide();
   const emptyStateWidget = renderEmptyStateMessage();
 
@@ -686,6 +741,30 @@ export function renderDashboard(
       .radar-list li { margin: 4px 0; line-height: 1.45; }
       .legend summary { cursor: pointer; }
       .legend-grid { display: grid; gap: 6px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-top: 8px; }
+      .top-candidates { position: sticky; top: 6px; z-index: 20; }
+      .candidate-list { margin: 8px 0 0; padding-left: 0; list-style: none; display: grid; gap: 6px; }
+      .candidate-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        padding: 6px 8px;
+        border: 1px solid #2f3b63;
+        border-radius: 8px;
+        background: #0f1630;
+      }
+      .candidate-rank { color: #9fb2e6; min-width: 24px; font-weight: 700; }
+      .candidate-jump {
+        margin-left: auto;
+        background: #1a264d;
+        color: #dbe8ff;
+        border: 1px solid #4a5a8f;
+        border-radius: 8px;
+        padding: 4px 8px;
+        font-size: 11px;
+        cursor: pointer;
+      }
+      .candidate-jump:hover { background: #2f5ed7; border-color: #7fa3ff; color: #fff; }
       .snapshot-top { margin: 8px 0; }
       .snapshot-blockers ul { margin: 8px 0 0; padding-left: 18px; }
       .snapshot-blockers li { margin: 4px 0; }
@@ -771,6 +850,11 @@ export function renderDashboard(
       .why-blocked summary::-webkit-details-marker { display: none; }
       .why-blocked ul { margin: 6px 0 0; padding-left: 16px; color: #c6d6ff; }
       .why-blocked li { margin: 2px 0; }
+      .board-row.row-focus {
+        outline: 2px solid #7fa3ff;
+        outline-offset: -2px;
+        box-shadow: inset 4px 0 0 #7fa3ff;
+      }
       code { color: #cddcff; }
       :focus-visible { outline: 2px solid #7fa3ff; outline-offset: 2px; }
     </style>
@@ -802,6 +886,7 @@ export function renderDashboard(
     ${fieldGuide}
     ${boardHealthWidget}
     ${checklistWidget}
+    ${topCandidatesWidget}
 
     <div class="toolbar">
       <div class="filters">
@@ -900,6 +985,7 @@ export function renderDashboard(
         const checklistRows = Array.from(document.querySelectorAll(".checklist-row"));
         const checklistSearch = document.getElementById("checklist-search");
         const checklistFilterButtons = Array.from(document.querySelectorAll(".checklist-filter-btn"));
+        const candidateJumpButtons = Array.from(document.querySelectorAll(".candidate-jump"));
 
         let activeFilter = "all";
         let activeView = "flat";
@@ -1419,6 +1505,38 @@ export function renderDashboard(
             applyChecklist();
           });
         }
+
+        candidateJumpButtons.forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            const targetId = btn.getAttribute("data-target-id");
+            if (!targetId) return;
+
+            activeView = "flat";
+            activeFilter = "all";
+            safeSetPreference("fams.activeView", activeView);
+            safeSetPreference("fams.activeFilter", activeFilter);
+            setActiveButtons(viewButtons, "view", activeView);
+            setActiveButtons(filterButtons, "filter", activeFilter);
+            if (flatView && collapsedView && confluenceView) {
+              flatView.classList.remove("hidden");
+              collapsedView.classList.add("hidden");
+              confluenceView.classList.add("hidden");
+            }
+            applyMain();
+
+            const targetRow = document.getElementById(targetId);
+            if (!targetRow) return;
+            targetRow.classList.add("row-focus");
+            targetRow.scrollIntoView({ behavior: "smooth", block: "center" });
+            const details = targetRow.querySelector(".why-blocked");
+            if (details && details.tagName === "DETAILS") {
+              details.open = true;
+            }
+            window.setTimeout(function () {
+              targetRow.classList.remove("row-focus");
+            }, 2500);
+          });
+        });
 
         setActiveButtons(filterButtons, "filter", activeFilter);
         setActiveButtons(viewButtons, "view", activeView);

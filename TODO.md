@@ -14,7 +14,7 @@
 - [x] Enhance dashboard UX v3.4: empty-state blocker diagnostics, sticky key columns, distinct unknown badges, and live auto-refresh countdown.
 - [x] Enhance dashboard UX v3.5: trader-language state labels, no-ready diagnostic banner, filter count chips, and collapsed hygiene warning panel.
 - [x] Enhance dashboard UX v3.6: per-row "why blocked" expandable diagnostics in flat view for gate/participation clarity.
-- [ ] UX v3.7: add pinned "Top 5 candidates now" strip with actionable-or-closest fallback and blocker summary.
+- [x] UX v3.7: add pinned "Top 5 candidates now" strip with actionable-or-closest fallback and blocker summary.
 - [ ] UX v3.7: add blocker histogram widget to Actionability Snapshot (text-first, accessible).
 - [ ] UX v3.7: add smarter first-load default filter fallback (Ready -> Actionable -> Clean Only -> All) while preserving localStorage override.
 - [ ] UX v3.7: add header-click sorting affordances for symbol/confidence/age/pipeline state.
