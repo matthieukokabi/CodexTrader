@@ -116,3 +116,29 @@ All recommendations are UI/derivation presentation-level and do **not** require 
 3. Add smart default filter logic and header-click sorting.
 4. Consolidate blocker summaries across widgets.
 5. Iterate confidence/ETA enhancements.
+
+## Deployment and Environment Config (2026-05-20)
+
+- Runtime env is now centralized in [src/config/env.ts](/Users/magikmad/Documents/Codex/2026-05-10/codex-tradingview-mcp-feasibility-audit-for/CodexTrader/src/config/env.ts).
+- `NODE_ENV=production` behavior:
+  - requires `FAMS_INGEST_KEY`
+  - defaults to `FAMS_PORT=4890`
+  - defaults to `FAMS_DB_PATH=/var/lib/fams-dashboard/fams.db`
+- `NODE_ENV=development` behavior:
+  - defaults to ingest key `dev-local-key` if not set
+  - defaults to `FAMS_PORT=5900`
+  - defaults to `FAMS_DB_PATH=./fams-local.db`
+
+Production deploy command:
+
+```bash
+npm run deploy:prod
+```
+
+This runs `npm run build` and then restarts `fams-dashboard.service` via systemd:
+
+```bash
+sudo systemctl restart fams-dashboard.service
+```
+
+If running from a non-systemd/macOS environment, run deploy on the VPS host where the service exists.

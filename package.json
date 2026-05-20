@@ -11,7 +11,8 @@
     "test": "node --test dist/tests/*.test.js",
     "test:src": "node --import tsx --test src/tests/*.test.ts",
     "validate": "npm run typecheck && npm run build && npm run test",
-    "maintenance:clean": "node --import tsx src/scripts/maintenance-clean.ts"
+    "maintenance:clean": "node --import tsx src/scripts/maintenance-clean.ts",
+    "deploy:prod": "npm run build && sudo systemctl restart fams-dashboard.service"
   },
   "dependencies": {
     "express": "^4.21.2",
