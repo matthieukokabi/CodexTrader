@@ -1,6 +1,6 @@
 import express from "express";
 import rateLimit from "express-rate-limit";
-import { loadConfig } from "./config.js";
+import { loadConfig } from "./config/env.js";
 import {
   buildExpectedPairKey,
   EXPECTED_SYMBOL_NORMS,
