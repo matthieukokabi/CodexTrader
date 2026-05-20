@@ -236,6 +236,45 @@ export class FamsDb {
     return stmt.all() as unknown as LatestStateRow[];
   }
 
+  getRecentCloseSeries(limit = 10): Map<string, number[]> {
+    const safeLimit = Number.isInteger(limit) && limit > 0 ? limit : 10;
+
+    const stmt = this.db.prepare(`
+      SELECT symbol, timeframe, close, bar_time_utc
+      FROM (
+        SELECT
+          symbol,
+          timeframe,
+          close,
+          bar_time_utc,
+          ROW_NUMBER() OVER (
+            PARTITION BY symbol, timeframe
+            ORDER BY bar_time_utc DESC
+          ) AS rn
+        FROM events
+      ) ranked
+      WHERE rn <= ?
+      ORDER BY symbol ASC, timeframe ASC, bar_time_utc ASC
+    `);
+
+    const rows = stmt.all(safeLimit) as Array<{
+      symbol: string;
+      timeframe: string;
+      close: number;
+      bar_time_utc: string;
+    }>;
+
+    const series = new Map<string, number[]>();
+    rows.forEach((row) => {
+      const key = `${row.symbol}|${row.timeframe}`;
+      const current = series.get(key) ?? [];
+      current.push(Number(row.close));
+      series.set(key, current);
+    });
+
+    return series;
+  }
+
   close(): void {
     this.db.close();
   }

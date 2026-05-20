@@ -142,3 +142,13 @@ sudo systemctl restart fams-dashboard.service
 ```
 
 If running from a non-systemd/macOS environment, run deploy on the VPS host where the service exists.
+
+## v3.8 Momentum Context Enhancements (2026-05-20)
+
+- Added `sparkline_points` to each `/api/state` row as the last 10 normalized close values (0-1 range), preserving all existing response fields.
+- Added minimalist inline SVG sparklines in flat-view rows for quick momentum context.
+- Added a `Trend Summary (current filter)` panel with upward/downward/flat counts derived from currently filtered rows.
+- Added responsive behavior to hide sparkline column on narrow screens (`<600px`) to keep table readability.
+- Added tests:
+  - `src/tests/logic.test.ts` covers sparkline normalization behavior.
+  - `src/tests/dashboard.test.ts` covers sparkline and trend-summary rendering.

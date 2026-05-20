@@ -87,6 +87,7 @@ const CSV_COLUMNS: Array<keyof StateViewRow> = [
   "expected_pair",
   "missing_expected",
   "last_price",
+  "sparkline_points",
   "bar_time_utc",
   "received_at_utc",
   "age_ms",
@@ -113,8 +114,8 @@ const EXPECTED_MATRIX: MissingExpectedPair[] = EXPECTED_SYMBOL_NORMS.flatMap((sy
   }))
 );
 
-function toStateViewRow(row: LatestStateRow, now: Date): StateViewRow {
-  const derived = deriveState(row, now);
+function toStateViewRow(row: LatestStateRow, now: Date, sparklineSeries?: number[]): StateViewRow {
+  const derived = deriveState(row, now, sparklineSeries);
   return {
     symbol: row.symbol,
     timeframe: row.timeframe,
@@ -152,6 +153,7 @@ function toStateViewRow(row: LatestStateRow, now: Date): StateViewRow {
     expected_pair: derived.expectedPair,
     missing_expected: derived.missingExpected,
     last_price: row.close,
+    sparkline_points: derived.sparklinePoints,
     bar_time_utc: row.bar_time_utc,
     received_at_utc: row.received_at_utc,
     age_ms: derived.ageMs,
@@ -168,7 +170,12 @@ function toStateViewRow(row: LatestStateRow, now: Date): StateViewRow {
 }
 
 function buildStateBundle(now = new Date()): StateBundle {
-  const mapped = db.getLatestState().map((row) => toStateViewRow(row, now));
+  const closeSeriesByKey = db.getRecentCloseSeries(10);
+  const mapped = db.getLatestState().map((row) => {
+    const key = `${row.symbol}|${row.timeframe}`;
+    const series = closeSeriesByKey.get(key);
+    return toStateViewRow(row, now, series);
+  });
   const rows = sortStateRows(mapped);
 
   const observedExpectedKeys = new Set(

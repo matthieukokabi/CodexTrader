@@ -35,6 +35,19 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+function normalizeSparklinePoints(closeSeries: number[]): number[] {
+  const points = closeSeries.filter((value) => Number.isFinite(value));
+  if (points.length === 0) return [0.5];
+
+  const min = Math.min(...points);
+  const max = Math.max(...points);
+  if (max === min) {
+    return points.map(() => 0.5);
+  }
+
+  return points.map((value) => clamp((value - min) / (max - min), 0, 1));
+}
+
 export function canonicalizeTimeframe(timeframe: string): string {
   return normalizeTimeframeForMatch(timeframe);
 }
@@ -221,9 +234,10 @@ export interface DerivedState {
   expectedPair: boolean;
   missingExpected: boolean;
   expectedPairKey: string;
+  sparklinePoints: number[];
 }
 
-export function deriveState(row: LatestStateRow, now = new Date()): DerivedState {
+export function deriveState(row: LatestStateRow, now = new Date(), closeSeries: number[] = [row.close]): DerivedState {
   const barTime = Date.parse(row.bar_time_utc);
   const ageMs = Number.isNaN(barTime) ? Number.MAX_SAFE_INTEGER : Math.max(0, now.getTime() - barTime);
   const stale = ageMs > staleThresholdMs(row.timeframe, now);
@@ -265,7 +279,8 @@ export function deriveState(row: LatestStateRow, now = new Date()): DerivedState
     expectedTimeframe,
     expectedPair,
     missingExpected: !expectedPair,
-    expectedPairKey
+    expectedPairKey,
+    sparklinePoints: normalizeSparklinePoints(closeSeries)
   };
 }
 

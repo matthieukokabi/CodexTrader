@@ -80,6 +80,33 @@ function rowDomId(row: StateViewRow): string {
   return `row-${raw.replaceAll(/[^a-z0-9_-]+/g, "-").replaceAll(/-+/g, "-").replaceAll(/^-|-$/g, "")}`;
 }
 
+function classifySparklineTrend(points: number[]): "UP" | "DOWN" | "FLAT" {
+  if (points.length < 2) return "FLAT";
+  const first = points[0] ?? 0.5;
+  const last = points[points.length - 1] ?? 0.5;
+  const delta = last - first;
+  if (delta > 0.08) return "UP";
+  if (delta < -0.08) return "DOWN";
+  return "FLAT";
+}
+
+function renderSparklineSvg(points: number[]): string {
+  const values = points.length > 0 ? points : [0.5];
+  const width = 84;
+  const height = 22;
+  const path = values
+    .map((value, index) => {
+      const x = values.length === 1 ? width / 2 : 2 + (index * (width - 4)) / (values.length - 1);
+      const y = 2 + (1 - value) * (height - 4);
+      return `${index === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(" ");
+
+  return `<svg class="sparkline-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Recent price trend sparkline">
+  <path d="${path}" class="sparkline-path"></path>
+</svg>`;
+}
+
 function topRowsByBadge(rows: StateViewRow[], tradeBadge: string, limit = 5): StateViewRow[] {
   return rows
     .filter((row) => row.trade_badge === tradeBadge)
@@ -281,6 +308,21 @@ function renderActionabilitySnapshot(rows: StateViewRow[]): string {
   <div class="snapshot-histogram">
     <span class="k">Blocker distribution</span>
     <ul class="blocker-hist-list">${blockerHistogram || "<li class='blocker-hist-item'><span class='badge badge-gray'>none</span></li>"}</ul>
+  </div>
+</div>`;
+}
+
+function renderTrendSummaryWidget(rows: StateViewRow[]): string {
+  const up = rows.filter((row) => classifySparklineTrend(row.sparkline_points) === "UP").length;
+  const down = rows.filter((row) => classifySparklineTrend(row.sparkline_points) === "DOWN").length;
+  const flat = rows.length - up - down;
+
+  return `<div id="trend-summary" class="widget trend-summary">
+  <strong>Trend Summary (current filter)</strong>
+  <div class="widget-grid">
+    <div><span class="k">Upward</span><span class="v"><span id="trend-up-count">${up}</span></span></div>
+    <div><span class="k">Downward</span><span class="v"><span id="trend-down-count">${down}</span></span></div>
+    <div><span class="k">Flat</span><span class="v"><span id="trend-flat-count">${flat}</span></span></div>
   </div>
 </div>`;
 }
@@ -617,6 +659,7 @@ export function renderDashboard(
   const flatRows = rows
     .map((row) => {
       const domRowId = rowDomId(row);
+      const sparklineTrend = classifySparklineTrend(row.sparkline_points);
       return `<tr class="board-row"
   id="${esc(domRowId)}"
   data-symbol="${esc(row.symbol)}"
@@ -631,7 +674,8 @@ export function renderDashboard(
   data-operating-state="${esc(row.operating_state)}"
   data-unknown="${row.unknown_hygiene ? "1" : "0"}"
   data-direction-bias="${esc(row.direction_bias)}"
-  data-scenario-direction="${esc(row.direction)}">
+  data-scenario-direction="${esc(row.direction)}"
+  data-sparkline-trend="${sparklineTrend}">
 <td>${esc(row.symbol_norm)}</td>
 <td>${esc(row.timeframe_canonical)}</td>
 <td><span class="badge ${tradeBadgeClass(row.trade_badge)}">${esc(row.trade_badge)}</span></td>
@@ -643,6 +687,7 @@ export function renderDashboard(
 <td><span class="badge ${trendClass(row.trend_state)}">${esc(row.trend_state)}</span></td>
 <td><span class="badge ${trendClass(row.htf_trend_state)}">${esc(row.htf_trend_state)}</span></td>
 <td><span class="badge ${confidenceClass(row.confidence_bucket)}">${esc(row.confidence_bucket)} ${esc(row.confidence_score)}</span></td>
+<td class="sparkline-cell">${renderSparklineSvg(row.sparkline_points)}</td>
 <td>${esc(row.rvol.toFixed(3))}</td>
 <td>${esc(row.extension_score.toFixed(3))}</td>
 <td>${esc(row.age)}</td>
@@ -674,6 +719,7 @@ export function renderDashboard(
   const boardHealthWidget = renderBoardHealth(boardHealth);
   const checklistWidget = renderChecklistTable(symbolChecklist);
   const snapshotWidget = renderActionabilitySnapshot(rows);
+  const trendSummaryWidget = renderTrendSummaryWidget(rows);
   const radarWidget = renderTradeRadar(rows);
   const topCandidatesWidget = renderTopCandidatesStrip(rows);
   const fieldGuide = renderFieldGuide();
@@ -732,6 +778,11 @@ export function renderDashboard(
       }
       .filter-btn.active, .view-btn.active, .checklist-filter-btn.active { background: #2f5ed7; border-color: #7fa3ff; color: #fff; }
       .counts { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 14px; }
+      .top-summary-grid {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      }
       .hygiene, .missing, .widget {
         border: 1px solid #8b3f00;
         background: #2a1b00;
@@ -849,6 +900,9 @@ export function renderDashboard(
       .board-row[data-trade-badge="LONG READY"] { box-shadow: inset 3px 0 0 #35a06b; }
       .board-row[data-trade-badge="SHORT READY"] { box-shadow: inset 3px 0 0 #3e7cc1; }
       .board-row[data-trade-badge="WATCH"] { box-shadow: inset 3px 0 0 #c46720; }
+      .sparkline-svg { width: 84px; height: 22px; display: block; }
+      .sparkline-path { fill: none; stroke: #8fb8ff; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+      .sparkline-cell { min-width: 90px; }
       .badge {
         display: inline-block;
         border-radius: 999px;
@@ -898,6 +952,12 @@ export function renderDashboard(
         outline-offset: -2px;
         box-shadow: inset 4px 0 0 #7fa3ff;
       }
+      @media (max-width: 600px) {
+        .sparkline-col,
+        .sparkline-cell {
+          display: none;
+        }
+      }
       code { color: #cddcff; }
       :focus-visible { outline: 2px solid #7fa3ff; outline-offset: 2px; }
     </style>
@@ -924,7 +984,10 @@ export function renderDashboard(
       <span class="badge badge-unknown">UNKNOWN: ${tradeCounts.UNKNOWN || 0}</span>
     </div>
 
-    ${snapshotWidget}
+    <div class="top-summary-grid">
+      ${snapshotWidget}
+      ${trendSummaryWidget}
+    </div>
     ${radarWidget}
     ${fieldGuide}
     ${boardHealthWidget}
@@ -987,6 +1050,7 @@ export function renderDashboard(
             <th title="Current trend state">trend</th>
             <th title="Higher-timeframe trend state">htf trend</th>
             <th title="Confidence bucket and score"><button class="col-sort-btn" type="button" data-sort="confidence" aria-label="Sort by confidence score">confidence score <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
+            <th class="sparkline-col" title="Last 10-bar normalized close trend">sparkline</th>
             <th title="Relative volume">rvol</th>
             <th title="Extension score">extension</th>
             <th title="Age since bar time"><button class="col-sort-btn" type="button" data-sort="age" aria-label="Sort by freshness">age <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
@@ -1030,6 +1094,9 @@ export function renderDashboard(
         const checklistFilterButtons = Array.from(document.querySelectorAll(".checklist-filter-btn"));
         const candidateJumpButtons = Array.from(document.querySelectorAll(".candidate-jump"));
         const sortHeaderButtons = Array.from(document.querySelectorAll(".col-sort-btn"));
+        const trendUpCount = document.getElementById("trend-up-count");
+        const trendDownCount = document.getElementById("trend-down-count");
+        const trendFlatCount = document.getElementById("trend-flat-count");
 
         let activeFilter = "all";
         let activeView = "flat";
@@ -1296,7 +1363,7 @@ export function renderDashboard(
               .map(function (row) {
                 const trade = row.dataset.tradeBadge || "NO_TRADE";
                 const bucket = row.dataset.confidenceBucket || "LOW";
-                const ageText = row.children[13] ? row.children[13].textContent : "";
+                const ageText = row.children[14] ? row.children[14].textContent : "";
                 return '<tr>' +
                   '<td>' + (row.dataset.timeframe || "") + '</td>' +
                   '<td><span class="badge ' + tradeClass(trade) + '">' + trade + '</span></td>' +
@@ -1425,6 +1492,19 @@ export function renderDashboard(
             .slice(0, limit);
         }
 
+        function updateTrendSummary(activeRows) {
+          const counts = { UP: 0, DOWN: 0, FLAT: 0 };
+          activeRows.forEach(function (row) {
+            const trend = row.dataset.sparklineTrend || "FLAT";
+            if (trend === "UP") counts.UP += 1;
+            else if (trend === "DOWN") counts.DOWN += 1;
+            else counts.FLAT += 1;
+          });
+          if (trendUpCount) trendUpCount.textContent = String(counts.UP);
+          if (trendDownCount) trendDownCount.textContent = String(counts.DOWN);
+          if (trendFlatCount) trendFlatCount.textContent = String(counts.FLAT);
+        }
+
         function renderEmptyStateFor(modeLabel, filteredCount) {
           const panel = document.getElementById("empty-state");
           if (!panel) return;
@@ -1470,6 +1550,7 @@ export function renderDashboard(
             return matchesFilter(row, activeFilter) && matchesSearch(row, query);
           });
           const sortedRows = sortRowsForView(filteredRows);
+          updateTrendSummary(filteredRows);
           const filteredCards = confluenceCards.filter(function (card) {
             return matchesConfluenceFilter(card, activeFilter) && matchesConfluenceSearch(card, query);
           });

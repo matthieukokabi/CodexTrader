@@ -200,3 +200,21 @@ test("derives direction bias from trend and htf trend without affecting unknown 
   assert.equal(out.direction, "UNKNOWN");
   assert.equal(out.unknownHygiene, true);
 });
+
+test("derives normalized sparkline_points from recent close series", () => {
+  const row = baseRow();
+  const out = deriveState(row, new Date("2026-05-14T10:05:05Z"), [100, 110, 105, 115]);
+
+  assert.equal(out.sparklinePoints.length, 4);
+  assert.equal(out.sparklinePoints[0], 0);
+  assert.ok(Math.abs((out.sparklinePoints[1] ?? 0) - 0.6666666667) < 1e-6);
+  assert.ok(Math.abs((out.sparklinePoints[2] ?? 0) - 0.3333333333) < 1e-6);
+  assert.equal(out.sparklinePoints[3], 1);
+});
+
+test("derives flat sparkline_points when recent closes are equal", () => {
+  const row = baseRow();
+  const out = deriveState(row, new Date("2026-05-14T10:05:05Z"), [5, 5, 5, 5]);
+
+  assert.deepEqual(out.sparklinePoints, [0.5, 0.5, 0.5, 0.5]);
+});

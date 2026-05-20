@@ -37,6 +37,7 @@ function mkRow(overrides: Partial<StateViewRow>): StateViewRow {
     bar_confirmed: 1,
     no_trade_gate: 0,
     last_price: 100,
+    sparkline_points: [0.3, 0.45, 0.5, 0.62, 0.7],
     bar_time_utc: "2026-05-18T10:00:00Z",
     received_at_utc: "2026-05-18T10:00:02Z",
     age_ms: 1000,

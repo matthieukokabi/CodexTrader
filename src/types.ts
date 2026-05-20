@@ -84,6 +84,7 @@ export interface StateViewRow {
   bar_confirmed: number;
   no_trade_gate: number;
   last_price: number;
+  sparkline_points: number[];
   bar_time_utc: string;
   received_at_utc: string;
   age_ms: number;
