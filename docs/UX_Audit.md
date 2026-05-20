@@ -1,6 +1,6 @@
 # FAMS Trade Readiness Board UX Audit
 
-Date: 2026-05-19
+Date: 2026-05-20
 Repository: `matthieukokabi/CodexTrader` (`main`)
 
 ## Scope
@@ -17,7 +17,7 @@ The focus is trader clarity, actionability, and reliability while preserving API
 - Local codebase is up to date and validated (`npm run validate` passes).
 - Local dashboard currently runs with an empty local DB in dev mode (`/api/state` row count `0`).
 - Production dashboard has live data (`33` rows), all currently `trade_badge=UNKNOWN`.
-- Production UI is not yet on the latest local UX refinements (it still shows pre-v3.5/v3.6 controls and lacks filter count chips and row-level `why blocked` expansion).
+- Production UI is now on v3.7 parity with local `main` (Top 5 strip, header-click sorting, blocker histogram, smarter first-load defaults, and row-level `why blocked` diagnostics visible).
 
 ## Key Findings
 
