@@ -245,6 +245,19 @@ function renderActionabilitySnapshot(rows: StateViewRow[]): string {
     .slice(0, 5)
     .map(([reason, count]) => `<li><span class="badge badge-navy">${esc(reason)}</span> <strong>${count}</strong></li>`)
     .join("\n");
+  const blockedRows = rows.filter((row) => row.trade_badge !== "LONG READY" && row.trade_badge !== "SHORT READY").length;
+  const blockerHistogram = Array.from(blockerCounts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([reason, count]) => {
+      const pct = blockedRows > 0 ? Math.round((count / blockedRows) * 100) : 0;
+      return `<li class="blocker-hist-item">
+  <span class="blocker-hist-label">${esc(reason)}</span>
+  <span class="blocker-hist-bar-wrap"><span class="blocker-hist-bar" style="width:${pct}%"></span></span>
+  <span class="blocker-hist-count">${count} (${pct}%)</span>
+</li>`;
+    })
+    .join("\n");
 
   const readyHeadline =
     readyRows.length > 0
@@ -264,6 +277,10 @@ function renderActionabilitySnapshot(rows: StateViewRow[]): string {
   <div class="snapshot-blockers">
     <span class="k">Top blockers (non-ready rows)</span>
     <ul>${blockerSummary || "<li><span class='badge badge-gray'>none</span></li>"}</ul>
+  </div>
+  <div class="snapshot-histogram">
+    <span class="k">Blocker distribution</span>
+    <ul class="blocker-hist-list">${blockerHistogram || "<li class='blocker-hist-item'><span class='badge badge-gray'>none</span></li>"}</ul>
   </div>
 </div>`;
 }
@@ -768,6 +785,19 @@ export function renderDashboard(
       .snapshot-top { margin: 8px 0; }
       .snapshot-blockers ul { margin: 8px 0 0; padding-left: 18px; }
       .snapshot-blockers li { margin: 4px 0; }
+      .snapshot-histogram { margin-top: 10px; }
+      .blocker-hist-list { margin: 8px 0 0; padding-left: 0; list-style: none; display: grid; gap: 6px; }
+      .blocker-hist-item { display: grid; gap: 8px; grid-template-columns: minmax(120px, 240px) 1fr auto; align-items: center; }
+      .blocker-hist-label { color: #cfdcff; font-size: 12px; }
+      .blocker-hist-bar-wrap {
+        height: 8px;
+        border-radius: 99px;
+        border: 1px solid #4a5a8f;
+        background: #121f42;
+        overflow: hidden;
+      }
+      .blocker-hist-bar { height: 100%; display: block; background: linear-gradient(90deg, #3e7cc1, #7fa3ff); }
+      .blocker-hist-count { color: #b7c8f5; font-size: 11px; min-width: 66px; text-align: right; }
       .action-required { margin-top: 10px; }
       .action-required ul { margin: 6px 0 0; padding-left: 18px; }
       .checklist-head { display: flex; gap: 10px; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
