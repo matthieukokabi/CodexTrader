@@ -683,7 +683,7 @@ export function renderDashboard(
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>FAMS Trade Readiness Board v3.4 UX</title>
+    <title>FAMS Trade Readiness Board v3.7 UX</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; margin: 16px; background: #0b1020; color: #f0f4ff; }
@@ -903,7 +903,7 @@ export function renderDashboard(
     </style>
   </head>
   <body>
-    <h1>FAMS Trade Readiness Board v3.4 UX</h1>
+    <h1>FAMS Trade Readiness Board v3.7 UX</h1>
     <div class="meta"><span class="live-dot" aria-hidden="true"></span><strong>Live:</strong> refresh in <span id="refresh-countdown">60s</span> | <strong>Generated:</strong> ${esc(
       now.toISOString()
     )} | <strong>Visible items:</strong> <span id="visible-count">${rows.length}</span></div>
