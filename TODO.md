@@ -17,7 +17,7 @@
 - [x] UX v3.7: add pinned "Top 5 candidates now" strip with actionable-or-closest fallback and blocker summary.
 - [ ] UX v3.7: add blocker histogram widget to Actionability Snapshot (text-first, accessible).
 - [ ] UX v3.7: add smarter first-load default filter fallback (Ready -> Actionable -> Clean Only -> All) while preserving localStorage override.
-- [ ] UX v3.7: add header-click sorting affordances for symbol/confidence/age/pipeline state.
+- [x] UX v3.7: add header-click sorting affordances for symbol/confidence/age/pipeline state.
 - [ ] Ops: deploy latest dashboard `main` UX to production for local/prod parity.
 - [ ] Configure nginx + TLS + public subdomain (manual next step).
 - [ ] Create TradingView alerts and webhook wiring (manual next step).

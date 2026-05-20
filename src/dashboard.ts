@@ -787,6 +787,19 @@ export function renderDashboard(
       th { position: sticky; top: 0; background: #15203f; }
       tr:nth-child(even) { background: #111a34; }
       .table-wrap { overflow: auto; border: 1px solid #2f3b63; border-radius: 8px; }
+      .col-sort-btn {
+        background: transparent;
+        border: 0;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .col-sort-btn .sort-indicator { color: #7f90c3; font-size: 10px; }
+      .col-sort-btn[data-active="true"] .sort-indicator { color: #b8d4ff; }
       #flat-view table th:first-child, #flat-view table td:first-child {
         position: sticky;
         left: 0;
@@ -933,20 +946,20 @@ export function renderDashboard(
       <table>
         <thead>
           <tr>
-            <th title="Canonical exchange:symbol key">symbol_norm</th>
+            <th title="Canonical exchange:symbol key"><button class="col-sort-btn" type="button" data-sort="symbol" aria-label="Sort by symbol">symbol_norm <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
             <th title="Canonical timeframe">timeframe</th>
             <th title="Final decision badge">trade status</th>
             <th title="Scenario-derived direction">scenario dir</th>
             <th title="Trend/HTF bias">trend bias</th>
-            <th title="Operating state in the decision pipeline">pipeline state</th>
+            <th title="Operating state in the decision pipeline"><button class="col-sort-btn" type="button" data-sort="default" aria-label="Sort by pipeline state priority">pipeline state <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
             <th title="Primary gate/block reason">blocker</th>
             <th title="Expanded explanation of gate/participation/structure blockers">why blocked</th>
             <th title="Current trend state">trend</th>
             <th title="Higher-timeframe trend state">htf trend</th>
-            <th title="Confidence bucket and score">confidence score</th>
+            <th title="Confidence bucket and score"><button class="col-sort-btn" type="button" data-sort="confidence" aria-label="Sort by confidence score">confidence score <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
             <th title="Relative volume">rvol</th>
             <th title="Extension score">extension</th>
-            <th title="Age since bar time">age</th>
+            <th title="Age since bar time"><button class="col-sort-btn" type="button" data-sort="age" aria-label="Sort by freshness">age <span class="sort-indicator" aria-hidden="true">↕</span></button></th>
             <th title="Last webhook ingestion timestamp">last update</th>
             <th title="Symbol whitelist and hygiene status">hygiene</th>
           </tr>
@@ -986,6 +999,7 @@ export function renderDashboard(
         const checklistSearch = document.getElementById("checklist-search");
         const checklistFilterButtons = Array.from(document.querySelectorAll(".checklist-filter-btn"));
         const candidateJumpButtons = Array.from(document.querySelectorAll(".candidate-jump"));
+        const sortHeaderButtons = Array.from(document.querySelectorAll(".col-sort-btn"));
 
         let activeFilter = "all";
         let activeView = "flat";
@@ -1156,6 +1170,14 @@ export function renderDashboard(
             } else {
               btn.classList.remove("active");
             }
+            btn.setAttribute("aria-pressed", isActive ? "true" : "false");
+          });
+        }
+
+        function setActiveSortHeaders(activeMode) {
+          sortHeaderButtons.forEach(function (btn) {
+            const isActive = (btn.dataset.sort || "") === activeMode;
+            btn.setAttribute("data-active", isActive ? "true" : "false");
             btn.setAttribute("aria-pressed", isActive ? "true" : "false");
           });
         }
@@ -1496,9 +1518,20 @@ export function renderDashboard(
           sortModeSelect.addEventListener("change", function () {
             activeSort = String(sortModeSelect.value || "default");
             safeSetPreference("fams.activeSort", activeSort);
+            setActiveSortHeaders(activeSort);
             applyMain();
           });
         }
+
+        sortHeaderButtons.forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            activeSort = String(btn.dataset.sort || "default");
+            safeSetPreference("fams.activeSort", activeSort);
+            if (sortModeSelect) sortModeSelect.value = activeSort;
+            setActiveSortHeaders(activeSort);
+            applyMain();
+          });
+        });
 
         if (checklistSearch) {
           checklistSearch.addEventListener("input", function () {
@@ -1543,6 +1576,7 @@ export function renderDashboard(
         if (sortModeSelect) {
           sortModeSelect.value = activeSort;
         }
+        setActiveSortHeaders(activeSort);
 
         if (flatView && collapsedView && confluenceView) {
           flatView.classList.toggle("hidden", activeView !== "flat");
